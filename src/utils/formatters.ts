@@ -43,78 +43,78 @@ export const STATUS_CONFIG: Record<
 > = {
   Received: {
     label: 'Đã tiếp nhận',
-    bg: 'bg-slate-100 dark:bg-slate-800',
-    text: 'text-slate-800 dark:text-slate-200',
+    bg: 'bg-slate-100',
+    text: 'text-slate-800',
     border: 'border-slate-300',
     step: 1,
   },
   Diagnosing: {
     label: 'Đang kiểm tra',
-    bg: 'bg-blue-50 dark:bg-blue-950/60',
-    text: 'text-blue-700 dark:text-blue-300',
-    border: 'border-blue-300',
+    bg: 'bg-sky-50',
+    text: 'text-sky-700',
+    border: 'border-sky-300',
     step: 2,
   },
   Waiting_Approval: {
     label: 'Chờ khách duyệt',
-    bg: 'bg-amber-50 dark:bg-amber-950/60',
-    text: 'text-amber-800 dark:text-amber-300',
+    bg: 'bg-amber-50',
+    text: 'text-amber-800',
     border: 'border-amber-300',
     step: 3,
   },
   Waiting_Parts: {
     label: 'Chờ linh kiện',
-    bg: 'bg-purple-50 dark:bg-purple-950/60',
-    text: 'text-purple-700 dark:text-purple-300',
+    bg: 'bg-purple-50',
+    text: 'text-purple-700',
     border: 'border-purple-300',
     step: 4,
   },
   In_Progress: {
     label: 'Đang sửa chữa',
-    bg: 'bg-indigo-50 dark:bg-indigo-950/60',
-    text: 'text-indigo-700 dark:text-indigo-300',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
     border: 'border-indigo-300',
     step: 5,
   },
   Quality_Check: {
     label: 'Kiểm tra chất lượng',
-    bg: 'bg-cyan-50 dark:bg-cyan-950/60',
-    text: 'text-cyan-800 dark:text-cyan-300',
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-800',
     border: 'border-cyan-300',
     step: 6,
   },
   Completed: {
     label: 'Đã sửa xong',
-    bg: 'bg-emerald-50 dark:bg-emerald-950/60',
-    text: 'text-emerald-700 dark:text-emerald-300',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
     border: 'border-emerald-300',
     step: 7,
   },
   Ready_For_Pickup: {
     label: 'Chờ khách nhận',
-    bg: 'bg-teal-50 dark:bg-teal-950/60',
-    text: 'text-teal-800 dark:text-teal-300',
+    bg: 'bg-teal-50',
+    text: 'text-teal-800',
     border: 'border-teal-300',
     step: 8,
   },
   Delivered: {
     label: 'Đã bàn giao',
-    bg: 'bg-green-100 dark:bg-green-950/70',
-    text: 'text-green-800 dark:text-green-200',
-    border: 'border-green-400',
+    bg: 'bg-green-50',
+    text: 'text-green-800',
+    border: 'border-green-300',
     step: 9,
   },
   Warranty: {
     label: 'Đang bảo hành',
-    bg: 'bg-orange-50 dark:bg-orange-950/60',
-    text: 'text-orange-800 dark:text-orange-300',
+    bg: 'bg-orange-50',
+    text: 'text-orange-800',
     border: 'border-orange-300',
     step: 10,
   },
   Cancelled: {
     label: 'Đã hủy',
-    bg: 'bg-rose-50 dark:bg-rose-950/60',
-    text: 'text-rose-700 dark:text-rose-300',
+    bg: 'bg-rose-50',
+    text: 'text-rose-700',
     border: 'border-rose-300',
     step: 0,
   },
@@ -153,3 +153,23 @@ export function getTicketQrUrl(ticketCode: string): string {
   const url = `${window.location.origin}/lookup?ticket=${ticketCode}`;
   return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}`;
 }
+
+export function translateStatus(status?: string | null): string {
+  if (!status) return '';
+  if (status in STATUS_CONFIG) {
+    return STATUS_CONFIG[status as RepairStatus].label;
+  }
+  return status;
+}
+
+export function localizeText(text?: string | null): string {
+  if (!text) return '';
+  let result = text;
+  // Map raw status enum keys occurring in free text to Vietnamese labels
+  for (const [key, conf] of Object.entries(STATUS_CONFIG)) {
+    const regex = new RegExp(`\\b${key}\\b`, 'g');
+    result = result.replace(regex, conf.label);
+  }
+  return result;
+}
+

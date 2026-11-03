@@ -1,8 +1,27 @@
 import React, { useState } from 'react';
 import { StorageService } from '../../services/mockStorage';
 import { AuditLog } from '../../types';
-import { formatDateTime } from '../../utils/formatters';
+import { formatDateTime, localizeText } from '../../utils/formatters';
 import { History, Search, ShieldAlert } from 'lucide-react';
+
+const ACTION_LABELS: Record<string, { label: string; color: string }> = {
+  STATUS_TRANSITION: { label: 'Đổi trạng thái', color: 'bg-purple-100 text-purple-800' },
+  CREATE_TICKET: { label: 'Tiếp nhận mới', color: 'bg-blue-100 text-blue-800' },
+  UPDATE_TICKET: { label: 'Cập nhật phiếu', color: 'bg-slate-100 text-slate-800' },
+  CREATE_QUOTE: { label: 'Tạo báo giá', color: 'bg-amber-100 text-amber-800' },
+  APPROVE_QUOTE: { label: 'Duyệt báo giá', color: 'bg-emerald-100 text-emerald-800' },
+  REJECT_QUOTE: { label: 'Từ chối báo giá', color: 'bg-rose-100 text-rose-800' },
+  AUTO_PAYMENT_WEBHOOK: { label: 'Tự động duyệt thu', color: 'bg-emerald-100 text-emerald-800' },
+  SMARTPOS_PAYMENT: { label: 'Quẹt thẻ SmartPOS', color: 'bg-indigo-100 text-indigo-800' },
+  ADD_PAYMENT: { label: 'Lập phiếu thu', color: 'bg-emerald-100 text-emerald-800' },
+  ASSIGN_TECHNICIAN: { label: 'Phân công KTV', color: 'bg-indigo-100 text-indigo-800' },
+  CREATE_PROMO: { label: 'Tạo mã ưu đãi', color: 'bg-teal-100 text-teal-800' },
+  UPDATE_PROMO: { label: 'Sửa mã ưu đãi', color: 'bg-slate-100 text-slate-800' },
+  DELETE_PROMO: { label: 'Xóa mã ưu đãi', color: 'bg-rose-100 text-rose-800' },
+  APPLY_DISCOUNT: { label: 'Áp dụng ưu đãi', color: 'bg-emerald-100 text-emerald-800' },
+  REMOVE_DISCOUNT: { label: 'Hủy ưu đãi', color: 'bg-slate-200 text-slate-700' },
+  EXPORT_PART: { label: 'Xuất kho linh kiện', color: 'bg-amber-100 text-amber-800' },
+};
 
 export const AuditLogPage: React.FC = () => {
   const [logs] = useState<AuditLog[]>(() => StorageService.getAuditLogs());
@@ -58,12 +77,12 @@ export const AuditLogPage: React.FC = () => {
                 </td>
                 <td className="py-3 px-4 font-bold text-slate-800">{log.user_name}</td>
                 <td className="py-3 px-4">
-                  <span className="font-mono font-bold text-[10px] px-2 py-0.5 rounded bg-slate-100 text-indigo-800">
-                    {log.action}
+                  <span className={`font-bold text-[11px] px-2.5 py-1 rounded-md border ${ACTION_LABELS[log.action]?.color || 'bg-slate-100 text-slate-800 border-slate-200'}`}>
+                    {ACTION_LABELS[log.action]?.label || log.action}
                   </span>
                 </td>
                 <td className="py-3 px-4 font-mono font-semibold text-slate-700">{log.entity_id}</td>
-                <td className="py-3 px-4 text-slate-700 max-w-md">{log.details}</td>
+                <td className="py-3 px-4 text-slate-700 max-w-md">{localizeText(log.details)}</td>
                 <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">{log.ip_address || '127.0.0.1'}</td>
               </tr>
             ))}

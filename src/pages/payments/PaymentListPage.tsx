@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../../services/mockStorage';
 import { Payment, RepairTicket } from '../../types';
 import { formatVND, formatDateTime } from '../../utils/formatters';
-import { DollarSign, Search, CreditCard, AlertCircle } from 'lucide-react';
+import { DollarSign, Search, CreditCard, AlertCircle, Zap } from 'lucide-react';
 
 interface PaymentListPageProps {
   onSelectTicket?: (ticketId: number) => void;
 }
 
 export const PaymentListPage: React.FC<PaymentListPageProps> = ({ onSelectTicket }) => {
-  const [payments] = useState<Payment[]>(() => StorageService.getPayments());
-  const tickets = StorageService.getTickets();
+  const [payments, setPayments] = useState<Payment[]>(() => StorageService.getPayments());
+  const [tickets, setTickets] = useState<RepairTicket[]>(() => StorageService.getTickets());
   const [activeTab, setActiveTab] = useState<'payments' | 'debts'>('payments');
   const [search, setSearch] = useState('');
+
+  const reloadData = () => {
+    setPayments(StorageService.getPayments());
+    setTickets(StorageService.getTickets());
+  };
+
+  useEffect(() => {
+    const handleAutoPayment = () => {
+      reloadData();
+    };
+    window.addEventListener('repairflow_auto_payment', handleAutoPayment);
+    return () => window.removeEventListener('repairflow_auto_payment', handleAutoPayment);
+  }, []);
 
   // Tickets with debt > 0
   const debtTickets = tickets.filter((t) => t.debt_amount > 0 && t.status !== 'Cancelled');
@@ -95,9 +108,16 @@ export const PaymentListPage: React.FC<PaymentListPageProps> = ({ onSelectTicket
                   </td>
                   <td className="py-3 px-4 font-semibold text-slate-900">{p.customer_name}</td>
                   <td className="py-3 px-4">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                      {p.payment_method === 'Cash' ? 'Tiền mặt' : 'Chuyển khoản'}
-                    </span>
+                    {p.is_auto_verified ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <Zap className="w-3 h-3 text-emerald-600" />
+                        {p.payment_method === 'POS_Card' ? 'SmartPOS' : 'Auto Webhook'}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                        {p.payment_method === 'Cash' ? 'Tiền mặt' : p.payment_method === 'POS_Card' ? 'Quẹt thẻ POS' : 'Chuyển khoản'}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">

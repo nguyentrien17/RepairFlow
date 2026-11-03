@@ -14,11 +14,13 @@ import {
   InventoryTransaction,
   RepairPartUsage,
   Payment,
+  PaymentMethod,
   DeliveryRecord,
   Warranty,
   StoreSettings,
   AuditLog,
   RepairStatus,
+  Promotion,
 } from '../types';
 
 const STORAGE_KEY_PREFIX = 'repairflow_';
@@ -31,6 +33,7 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Nguyễn Triển (Admin)',
     phone: '0901234567',
     role: 'admin',
+    password: 'admin',
     is_active: true,
     created_at: '2026-01-01T08:00:00Z',
     last_login_at: '2026-11-03T07:30:00Z',
@@ -42,6 +45,7 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Nguyễn Văn Quản (Quản lý)',
     phone: '0912345678',
     role: 'manager',
+    password: '123',
     is_active: true,
     created_at: '2026-01-05T08:00:00Z',
   },
@@ -49,9 +53,10 @@ export const INITIAL_USERS: User[] = [
     id: 3,
     username: 'letan',
     email: 'letan@repairflow.vn',
-    full_name: 'Trần Thị Thu Hà (Lễ tân)',
+    full_name: 'Trần Thị Thu Hà (Lễ tân & Thu ngân)',
     phone: '0923456789',
     role: 'receptionist',
+    password: '123',
     is_active: true,
     created_at: '2026-01-10T08:00:00Z',
   },
@@ -62,16 +67,18 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Lê Hoàng Nam (Kỹ thuật viên Trưởng)',
     phone: '0934567890',
     role: 'technician',
+    password: '123',
     is_active: true,
     created_at: '2026-01-15T08:00:00Z',
   },
   {
     id: 5,
     username: 'thungan',
-    email: 'thungan@repairflow.vn',
-    full_name: 'Phạm Minh Anh (Thu ngân)',
+    email: 'letan2@repairflow.vn',
+    full_name: 'Phạm Minh Anh (Lễ tân & Thu ngân 2)',
     phone: '0945678901',
-    role: 'cashier',
+    role: 'receptionist',
+    password: '123',
     is_active: true,
     created_at: '2026-02-01T08:00:00Z',
   },
@@ -93,6 +100,12 @@ export const INITIAL_SETTINGS: StoreSettings = {
     '1. Quý khách vui lòng sao lưu dữ liệu cá nhân trước khi bàn giao. Cửa hàng không chịu trách nhiệm về dữ liệu phần mềm.\n2. Thiết bị sau khi thông báo hoàn tất, quý khách vui lòng đến nhận trong vòng 30 ngày.\n3. Vui lòng giữ phiếu tiếp nhận để đối chiếu khi nhận máy.',
   terms_warranty:
     '1. Bảo hành miễn phí các lỗi kỹ thuật và linh kiện đã thay thế trong thời hạn cam kết.\n2. Không bảo hành các trường hợp: Rơi vỡ, nứt cấn, ngấm nước, chập cháy do nguồn điện không ổn định hoặc tự ý tháo dỡ tem niêm phong.',
+  auto_payment_enabled: true,
+  payment_gateway_provider: 'sepay',
+  gateway_api_key: 'SP_LIVE_DEMO_KEY_98821102',
+  gateway_webhook_secret: 'whsec_repflow_secret_key_8899',
+  pos_terminal_id: 'VNPAY_POS_Q1_01',
+  pos_ip_address: '192.168.1.188:8080',
 };
 
 export const INITIAL_CUSTOMERS: Customer[] = [
@@ -670,6 +683,91 @@ export const INITIAL_WARRANTIES: Warranty[] = [
   },
 ];
 
+export const INITIAL_PROMOTIONS: Promotion[] = [
+  {
+    id: 1,
+    code: 'KHACHQUEN10',
+    name: 'Ưu đãi Khách hàng thân thiết (10%)',
+    description: 'Giảm 10% tổng chi phí sửa chữa, tối đa 100.000đ cho khách hàng đã từng sử dụng dịch vụ tại trung tâm.',
+    discount_type: 'percentage',
+    discount_value: 10,
+    max_discount_amount: 100000,
+    min_order_amount: 200000,
+    applicable_to: 'all',
+    start_date: '2026-01-01',
+    end_date: '2026-12-31',
+    usage_limit: 500,
+    usage_count: 38,
+    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 2,
+    code: 'HSSV50K',
+    name: 'Hỗ trợ Học sinh - Sinh viên (50.000 đ)',
+    description: 'Giảm trực tiếp 50.000đ cho học sinh, sinh viên xuất trình thẻ hợp lệ, áp dụng đơn sửa chữa từ 250.000đ.',
+    discount_type: 'fixed',
+    discount_value: 50000,
+    min_order_amount: 250000,
+    applicable_to: 'all',
+    start_date: '2026-01-01',
+    end_date: '2026-12-31',
+    usage_limit: 200,
+    usage_count: 45,
+    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 3,
+    code: 'TRIAN20',
+    name: 'Tri ân khách hàng tháng sinh nhật (20%)',
+    description: 'Giảm 20% tổng hóa đơn, tối đa 150.000đ dành cho hóa đơn sửa chữa từ 400.000đ.',
+    discount_type: 'percentage',
+    discount_value: 20,
+    max_discount_amount: 150000,
+    min_order_amount: 400000,
+    applicable_to: 'all',
+    start_date: '2026-10-01',
+    end_date: '2026-12-31',
+    usage_limit: 100,
+    usage_count: 19,
+    is_active: true,
+    created_at: '2026-10-01T00:00:00Z',
+  },
+  {
+    id: 4,
+    code: 'KHACHMOI30K',
+    name: 'Chào đón Khách hàng mới (30.000 đ)',
+    description: 'Giảm ngay 30.000đ cho khách hàng lần đầu sửa chữa thiết bị tại hệ thống RepairFlow, đơn từ 150.000đ.',
+    discount_type: 'fixed',
+    discount_value: 30000,
+    min_order_amount: 150000,
+    applicable_to: 'all',
+    start_date: '2026-01-01',
+    end_date: '2026-12-31',
+    usage_limit: 1000,
+    usage_count: 82,
+    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 5,
+    code: 'CONGSUA50K',
+    name: 'Giảm tiền công kỹ thuật & Vệ sinh (50.000 đ)',
+    description: 'Hỗ trợ giảm 50.000đ tiền công kiểm tra chuyên sâu, vệ sinh tra keo tản nhiệt định kỳ cho laptop và máy bàn.',
+    discount_type: 'fixed',
+    discount_value: 50000,
+    min_order_amount: 100000,
+    applicable_to: 'labor',
+    start_date: '2026-01-01',
+    end_date: '2026-12-31',
+    usage_limit: 300,
+    usage_count: 26,
+    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+];
+
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   {
     id: 1,
@@ -725,6 +823,29 @@ function save<T>(key: string, data: T): void {
   }
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  Received: 'Đã tiếp nhận',
+  Diagnosing: 'Đang kiểm tra',
+  Waiting_Approval: 'Chờ khách duyệt',
+  Waiting_Parts: 'Chờ linh kiện',
+  In_Progress: 'Đang sửa chữa',
+  Quality_Check: 'Kiểm tra chất lượng',
+  Completed: 'Đã sửa xong',
+  Ready_For_Pickup: 'Chờ khách nhận',
+  Delivered: 'Đã bàn giao',
+  Warranty: 'Đang bảo hành',
+  Cancelled: 'Đã hủy',
+};
+
+function cleanStatusText(text?: string): string {
+  if (!text) return '';
+  let res = text;
+  for (const [key, label] of Object.entries(STATUS_LABELS)) {
+    res = res.replace(new RegExp(`\\b${key}\\b`, 'g'), label);
+  }
+  return res;
+}
+
 export const StorageService = {
   // Reset all data to factory sample data
   resetToSampleData(): void {
@@ -763,6 +884,14 @@ export const StorageService = {
   },
   saveUsers(users: User[]): void {
     save('users', users);
+  },
+  updateUser(id: number, data: Partial<User>): User | undefined {
+    const list = this.getUsers();
+    const idx = list.findIndex((u) => u.id === id);
+    if (idx === -1) return undefined;
+    list[idx] = { ...list[idx], ...data };
+    this.saveUsers(list);
+    return list[idx];
   },
 
   // Customers
@@ -854,6 +983,7 @@ export const StorageService = {
     if (idx === -1) return undefined;
 
     const oldStatus = list[idx].status;
+
     list[idx] = {
       ...list[idx],
       ...updates,
@@ -862,12 +992,13 @@ export const StorageService = {
     save('tickets', list);
 
     if (updates.status && updates.status !== oldStatus) {
+      const targetLabel = STATUS_LABELS[updates.status] || updates.status;
       this.addStatusHistory(
         id,
         oldStatus,
         updates.status,
         updates.primary_technician_name || 'Hệ thống',
-        updates.cancellation_reason || `Chuyển trạng thái sang ${updates.status}`
+        updates.cancellation_reason || `Chuyển trạng thái sang ${targetLabel}`
       );
     }
 
@@ -877,14 +1008,21 @@ export const StorageService = {
   // Status history
   getStatusHistories(ticketId: number): RepairStatusHistory[] {
     const all = loadOrInit('histories', INITIAL_HISTORIES);
-    return all.filter((h) => h.ticket_id === ticketId);
+    return all
+      .filter((h) => h.ticket_id === ticketId)
+      .map((h) => ({
+        ...h,
+        notes: cleanStatusText(h.notes),
+      }));
   },
   addStatusHistory(
     ticketId: number,
     fromStatus: RepairStatus | undefined,
     toStatus: RepairStatus,
     changedBy: string,
-    notes?: string
+    notes?: string,
+    changedByRole?: string,
+    accountabilityStatement?: string
   ): void {
     const all = loadOrInit('histories', INITIAL_HISTORIES);
     const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
@@ -894,7 +1032,7 @@ export const StorageService = {
       from_status: fromStatus,
       to_status: toStatus,
       changed_by_name: changedBy,
-      notes,
+      notes: cleanStatusText(notes),
       created_at: new Date().toISOString(),
     });
     save('histories', all);
@@ -1014,10 +1152,16 @@ export const StorageService = {
     all.unshift(newPayment);
     save('payments', all);
 
+    // Safety sanitization: Never allow negative payment
+    const validAmount = Math.max(0, data.amount);
+
     // Update ticket debt and paid
     const ticket = this.getTicketById(data.ticket_id);
     if (ticket) {
-      const newPaid = ticket.paid_amount + data.amount;
+      // If ticket has a final_amount, cannot pay more than remaining debt
+      const maxPayable = ticket.debt_amount > 0 ? ticket.debt_amount : (ticket.final_amount > 0 ? 0 : validAmount);
+      const effectiveAmount = ticket.final_amount > 0 ? Math.min(validAmount, ticket.debt_amount) : validAmount;
+      const newPaid = ticket.paid_amount + effectiveAmount;
       const newDebt = Math.max(0, ticket.final_amount - newPaid);
       this.updateTicket(ticket.id, {
         paid_amount: newPaid,
@@ -1027,6 +1171,87 @@ export const StorageService = {
 
     this.addAuditLog('PAYMENT', 'payments', code, `Thu tiền ${data.amount.toLocaleString()} đ từ ${data.customer_name}`);
     return newPayment;
+  },
+
+  // Automated Payment Webhook Processor (VietQR / SmartPOS)
+  processPaymentWebhook(payload: {
+    amount: number;
+    content: string;
+    transaction_id?: string;
+    bank_brand?: string;
+    gateway_provider?: string;
+    payment_method?: PaymentMethod;
+    card_brand?: string;
+    pos_terminal?: string;
+  }): { success: boolean; message: string; payment?: Payment; ticket?: RepairTicket } {
+    const tickets = this.getTickets();
+    
+    // Extract ticket code: regex pattern SC-YYYYMMDD-XXXX
+    const match = payload.content.match(/SC-\d{8}-\d{4}/i);
+    let matchedTicket: RepairTicket | undefined;
+    if (match) {
+      matchedTicket = tickets.find((t) => t.ticket_code.toLowerCase() === match[0].toLowerCase());
+    }
+    
+    // Fuzzy matching if not matched by strict regex
+    if (!matchedTicket) {
+      matchedTicket = tickets.find((t) => payload.content.toLowerCase().includes(t.ticket_code.toLowerCase()));
+    }
+
+    if (!matchedTicket) {
+      return {
+        success: false,
+        message: `Không tìm thấy phiếu sửa chữa tương ứng với nội dung: "${payload.content}"`,
+      };
+    }
+
+    const txRef = payload.transaction_id || `TXN${Date.now()}`;
+    const method: PaymentMethod = payload.payment_method || (payload.card_brand ? 'POS_Card' : 'Bank_Transfer');
+    const isPOS = method === 'POS_Card';
+
+    const newPayment = this.addPayment({
+      ticket_id: matchedTicket.id,
+      ticket_code: matchedTicket.ticket_code,
+      customer_name: matchedTicket.customer_name,
+      amount: payload.amount,
+      payment_method: method,
+      payment_type: matchedTicket.debt_amount <= payload.amount ? 'Final' : 'Installment',
+      transaction_ref: txRef,
+      cashier_name: isPOS
+        ? `SmartPOS (${payload.pos_terminal || 'Quầy thu ngân'})`
+        : `Cổng ${payload.gateway_provider || 'VietQR'} Auto-Webhook`,
+      notes: isPOS
+        ? `Tự động xác nhận quẹt thẻ SmartPOS [${payload.card_brand || 'Thẻ ATM/Visa'}] qua máy ${payload.pos_terminal || 'POS-01'}`
+        : `Tự động nhận diện biến động số dư từ ${payload.bank_brand || 'Ngân hàng'}: "${payload.content}"`,
+      is_auto_verified: true,
+      gateway_provider: payload.gateway_provider || (isPOS ? 'VNPAY_POS' : 'SePAY'),
+      card_brand: payload.card_brand,
+    });
+
+    const updatedTicket = this.getTicketById(matchedTicket.id);
+
+    this.addAuditLog(
+      'AUTO_PAYMENT_WEBHOOK',
+      'payments',
+      newPayment.payment_code,
+      `Hệ thống tự động xác nhận thu tiền ${payload.amount.toLocaleString()} đ qua ${isPOS ? 'Máy SmartPOS' : 'VietQR Webhook'} cho phiếu ${matchedTicket.ticket_code}`
+    );
+
+    // Trigger window event for real-time reactivity across active tabs
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('repairflow_auto_payment', {
+          detail: { payment: newPayment, ticket: updatedTicket },
+        })
+      );
+    }
+
+    return {
+      success: true,
+      message: `Đã tự động xác nhận thanh toán ${payload.amount.toLocaleString()} đ cho phiếu ${matchedTicket.ticket_code}!`,
+      payment: newPayment,
+      ticket: updatedTicket,
+    };
   },
 
   // Warranties
@@ -1061,20 +1286,152 @@ export const StorageService = {
     return newWarranty;
   },
 
+  // Promotions & Discounts
+  getPromotions(): Promotion[] {
+    return loadOrInit('promotions', INITIAL_PROMOTIONS);
+  },
+  getPromotionById(id: number): Promotion | undefined {
+    return this.getPromotions().find((p) => p.id === id);
+  },
+  getPromotionByCode(code: string): Promotion | undefined {
+    if (!code) return undefined;
+    const clean = code.trim().toUpperCase();
+    return this.getPromotions().find((p) => p.code.toUpperCase() === clean);
+  },
+  addPromotion(data: Omit<Promotion, 'id' | 'created_at' | 'usage_count'>): Promotion {
+    const all = this.getPromotions();
+    const cleanCode = data.code.trim().toUpperCase();
+    if (all.some((p) => p.code.toUpperCase() === cleanCode)) {
+      throw new Error(`Mã ưu đãi "${cleanCode}" đã tồn tại trên hệ thống! Vui lòng chọn mã khác.`);
+    }
+    const newId = all.length > 0 ? Math.max(...all.map((p) => p.id)) + 1 : 1;
+    const newPromo: Promotion = {
+      ...data,
+      id: newId,
+      code: cleanCode,
+      usage_count: 0,
+      created_at: new Date().toISOString(),
+    };
+    all.unshift(newPromo);
+    save('promotions', all);
+    this.addAuditLog('CREATE_PROMO', 'promotions', newPromo.code, `Tạo mã ưu đãi mới: ${newPromo.code} - ${newPromo.name}`);
+    return newPromo;
+  },
+  updatePromotion(id: number, data: Partial<Promotion>): Promotion {
+    const all = this.getPromotions();
+    const idx = all.findIndex((p) => p.id === id);
+    if (idx === -1) throw new Error('Không tìm thấy chương trình ưu đãi');
+    
+    if (data.code) {
+      const cleanCode = data.code.trim().toUpperCase();
+      const existing = all.find((p) => p.code.toUpperCase() === cleanCode && p.id !== id);
+      if (existing) {
+        throw new Error(`Mã ưu đãi "${cleanCode}" đã bị trùng với chương trình khác!`);
+      }
+      data.code = cleanCode;
+    }
+
+    const updated = {
+      ...all[idx],
+      ...data,
+    };
+    all[idx] = updated;
+    save('promotions', all);
+    this.addAuditLog('UPDATE_PROMO', 'promotions', updated.code, `Cập nhật chương trình ưu đãi ${updated.code}`);
+    return updated;
+  },
+  deletePromotion(id: number): boolean {
+    const all = this.getPromotions();
+    const target = all.find((p) => p.id === id);
+    if (!target) return false;
+    const filtered = all.filter((p) => p.id !== id);
+    save('promotions', filtered);
+    this.addAuditLog('DELETE_PROMO', 'promotions', target.code, `Xóa mã ưu đãi: ${target.code}`);
+    return true;
+  },
+  validateAndCalculatePromotion(code: string, subtotal: number): {
+    valid: boolean;
+    promotion?: Promotion;
+    discountAmount: number;
+    message?: string;
+  } {
+    if (!code || !code.trim()) {
+      return { valid: false, discountAmount: 0, message: 'Vui lòng nhập hoặc chọn mã ưu đãi.' };
+    }
+    const promo = this.getPromotionByCode(code);
+    if (!promo) {
+      return { valid: false, discountAmount: 0, message: `Mã ưu đãi "${code.trim().toUpperCase()}" không tồn tại hoặc đã hết hiệu lực.` };
+    }
+    if (!promo.is_active) {
+      return { valid: false, discountAmount: 0, message: `Chương trình ưu đãi "${promo.code}" đang tạm ngưng áp dụng.` };
+    }
+
+    // Check validity date
+    const today = new Date().toISOString().slice(0, 10);
+    if (promo.start_date && today < promo.start_date) {
+      return { valid: false, discountAmount: 0, message: `Mã ưu đãi có hiệu lực từ ngày ${promo.start_date}.` };
+    }
+    if (promo.end_date && today > promo.end_date) {
+      return { valid: false, discountAmount: 0, message: `Mã ưu đãi đã hết hạn sử dụng (${promo.end_date}).` };
+    }
+
+    // Check usage limit
+    if (promo.usage_limit && promo.usage_count >= promo.usage_limit) {
+      return { valid: false, discountAmount: 0, message: 'Chương trình ưu đãi này đã hết lượt sử dụng quy định.' };
+    }
+
+    // Check min order
+    if (promo.min_order_amount && subtotal < promo.min_order_amount) {
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: `Đơn hàng tối thiểu ${promo.min_order_amount.toLocaleString('vi-VN')} đ mới được áp dụng (Hiện tại: ${subtotal.toLocaleString('vi-VN')} đ).`,
+      };
+    }
+
+    // Calculate discount amount
+    let calculated = 0;
+    if (promo.discount_type === 'percentage') {
+      calculated = Math.round((subtotal * promo.discount_value) / 100);
+      if (promo.max_discount_amount && calculated > promo.max_discount_amount) {
+        calculated = promo.max_discount_amount;
+      }
+    } else {
+      calculated = promo.discount_value;
+    }
+
+    // Cannot exceed total
+    calculated = Math.min(calculated, subtotal);
+
+    return {
+      valid: true,
+      promotion: promo,
+      discountAmount: calculated,
+      message: `Áp dụng thành công mã ${promo.code}: Giảm ${calculated.toLocaleString('vi-VN')} đ (${promo.name})`,
+    };
+  },
+  recordPromotionUsage(code: string): void {
+    const promo = this.getPromotionByCode(code);
+    if (!promo) return;
+    this.updatePromotion(promo.id, { usage_count: promo.usage_count + 1 });
+  },
+
   // Audit Logs
   getAuditLogs(): AuditLog[] {
     return loadOrInit('audit_logs', INITIAL_AUDIT_LOGS);
   },
-  addAuditLog(action: string, entityType: string, entityId: string, details: string): void {
+  addAuditLog(action: string, entityType: string, entityId: string, details: string, userName?: string): void {
     const all = loadOrInit('audit_logs', INITIAL_AUDIT_LOGS);
     const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
+    // Ensure passwords or secret codes are never recorded in audit logs
+    const sanitizedDetails = details.replace(/(?:mật khẩu|pass|pin|password)[^,.\n]*/gi, '[BẢO MẬT]');
     all.unshift({
       id: newId,
-      user_name: 'Người dùng',
+      user_name: userName || 'Người dùng',
       action,
       entity_type: entityType,
       entity_id: entityId,
-      details,
+      details: sanitizedDetails,
       created_at: new Date().toISOString(),
     });
     save('audit_logs', all.slice(0, 200)); // Keep last 200 logs

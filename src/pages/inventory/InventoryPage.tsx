@@ -4,6 +4,8 @@ import { Part, Supplier } from '../../types';
 import { formatVND } from '../../utils/formatters';
 import { Search, Plus, Boxes, PackagePlus, AlertTriangle, Truck } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { CurrencyInput } from '../../components/common/CurrencyInput';
+import { NumberInput } from '../../components/common/NumberInput';
 
 export const InventoryPage: React.FC = () => {
   const [parts, setParts] = useState<Part[]>(() => StorageService.getParts());
@@ -248,40 +250,42 @@ export const InventoryPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Giá vốn nhập (VND)</label>
-                  <input
-                    type="number"
+                  <CurrencyInput
                     value={costPrice}
-                    onChange={(e) => setCostPrice(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl"
+                    onChange={(val) => setCostPrice(val)}
+                    min={0}
+                    placeholder="VD: 300.000"
+                    showInWords={false}
                   />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Giá bán ra (VND)</label>
-                  <input
-                    type="number"
+                  <CurrencyInput
                     value={sellingPrice}
-                    onChange={(e) => setSellingPrice(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                    onChange={(val) => setSellingPrice(val)}
+                    min={0}
+                    placeholder="VD: 550.000"
+                    showInWords={false}
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Số lượng ban đầu</label>
-                  <input
-                    type="number"
+                  <NumberInput
+                    min={0}
                     value={stockQty}
-                    onChange={(e) => setStockQty(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl"
+                    onChange={(val) => setStockQty(val)}
+                    unit="cái"
                   />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Ngưỡng báo sắp hết</label>
-                  <input
-                    type="number"
+                  <NumberInput
+                    min={0}
                     value={minAlert}
-                    onChange={(e) => setMinAlert(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl"
+                    onChange={(val) => setMinAlert(val)}
+                    unit="cái"
                   />
                 </div>
               </div>
@@ -317,13 +321,13 @@ export const InventoryPage: React.FC = () => {
             <form onSubmit={handleReceiptStock} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Số lượng nhập thêm *</label>
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
                   required
                   value={receiptQty}
-                  onChange={(e) => setReceiptQty(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-sm text-slate-900"
+                  onChange={(val) => setReceiptQty(Math.max(1, val))}
+                  unit="cái"
+                  className="font-bold text-sm text-slate-900"
                 />
               </div>
 

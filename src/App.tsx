@@ -12,15 +12,20 @@ import { CustomerListPage } from './pages/customers/CustomerListPage';
 import { DeviceListPage } from './pages/devices/DeviceListPage';
 import { InventoryPage } from './pages/inventory/InventoryPage';
 import { PaymentListPage } from './pages/payments/PaymentListPage';
+import { PromotionsPage } from './pages/promotions/PromotionsPage';
 import { WarrantyListPage } from './pages/warranties/WarrantyListPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { StaffPage } from './pages/staff/StaffPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
 import { AuditLogPage } from './pages/audit/AuditLogPage';
 import { PublicLookupPortal } from './pages/lookup/PublicLookupPortal';
+import { LoginPage } from './pages/auth/LoginPage';
+import { ProfilePage } from './pages/auth/ProfilePage';
+import { useAuth } from './contexts/AuthContext';
 import { StorageService } from './services/mockStorage';
 
 function MainApp() {
+  const { currentUser } = useAuth();
   const [currentTab, setCurrentTab] = useState<TabType>(() => {
     // If opened with ?ticket=... or /lookup in URL, open lookup portal directly
     if (window.location.search.includes('ticket=') || window.location.pathname.includes('/lookup')) {
@@ -45,9 +50,22 @@ function MainApp() {
     }
   };
 
+  // If user is not logged in and not on public lookup portal, show login page
+  if (!currentUser && currentTab !== 'lookup') {
+    return (
+      <LoginPage
+        onOpenLookup={() => {
+          setSelectedTicketId(null);
+          setCurrentTab('lookup');
+        }}
+        onLoginSuccess={() => setCurrentTab('dashboard')}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
-      {/* Top Navbar */}
+    <div className="h-screen w-screen overflow-hidden bg-slate-50 flex flex-col font-sans text-slate-800 select-auto">
+      {/* Top Navbar: cố định trên cùng, không bị cuộn theo nội dung */}
       <Navbar
         onSearchSelect={(ticketId) => {
           setSelectedTicketId(ticketId);
@@ -57,11 +75,15 @@ function MainApp() {
           setSelectedTicketId(null);
           setCurrentTab('lookup');
         }}
+        onOpenProfile={() => {
+          setSelectedTicketId(null);
+          setCurrentTab('profile');
+        }}
       />
 
-      {/* Main Body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar (hidden in public lookup or print) */}
+      {/* Main Body: cố định chiều cao còn lại của viewport, min-h-0 ngăn tràn */}
+      <div className="flex flex-1 min-h-0 overflow-hidden w-full">
+        {/* Left Sidebar: cố định bên trái, tách biệt hoàn toàn cuộn */}
         {currentTab !== 'lookup' && (
           <Sidebar
             currentTab={currentTab}
@@ -70,8 +92,8 @@ function MainApp() {
           />
         )}
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        {/* Content Area: Vùng duy nhất cuộn độc lập theo nội dung trang con */}
+        <main className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6 bg-slate-50">
           {currentTab === 'lookup' && (
             <div>
               {/* Back button to staff portal if wanted */}
@@ -140,11 +162,13 @@ function MainApp() {
               }}
             />
           )}
+          {currentTab === 'promotions' && <PromotionsPage />}
           {currentTab === 'warranties' && <WarrantyListPage />}
           {currentTab === 'reports' && <ReportsPage />}
           {currentTab === 'staff' && <StaffPage />}
           {currentTab === 'settings' && <SettingsPage />}
           {currentTab === 'audit' && <AuditLogPage />}
+          {currentTab === 'profile' && <ProfilePage />}
         </main>
       </div>
     </div>

@@ -146,8 +146,10 @@ export const PrintModal: React.FC<PrintProps> = ({ ticket, settings, payment, ty
                   </tr>
                   {ticket.discount_amount > 0 && (
                     <tr>
-                      <td className="border border-slate-300 p-2 text-slate-600">Giảm giá / Ưu đãi</td>
-                      <td className="border border-slate-300 p-2 text-right text-emerald-600 font-medium">
+                      <td className="border border-slate-300 p-2 text-slate-600">
+                        Giảm giá / Ưu đãi {ticket.promotion_code ? `(Mã: ${ticket.promotion_code})` : ''}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-right text-emerald-600 font-semibold">
                         -{formatVND(ticket.discount_amount)}
                       </td>
                     </tr>

@@ -14,6 +14,7 @@ import {
   History,
   Settings,
   SearchCode,
+  BadgePercent,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -26,12 +27,14 @@ export type TabType =
   | 'devices'
   | 'inventory'
   | 'payments'
+  | 'promotions'
   | 'warranties'
   | 'reports'
   | 'staff'
   | 'audit'
   | 'settings'
-  | 'lookup';
+  | 'lookup'
+  | 'profile';
 
 interface SidebarProps {
   currentTab: TabType;
@@ -40,14 +43,14 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openCount = 0 }) => {
-  const { hasRole } = useAuth();
+  const { hasRole, currentUser } = useAuth();
 
   const navItems = [
     {
       id: 'dashboard',
       label: 'Tổng quan',
       icon: LayoutDashboard,
-      roles: ['admin', 'manager', 'technician', 'receptionist', 'cashier'],
+      roles: ['admin', 'manager', 'technician', 'receptionist'],
     },
     {
       id: 'intake',
@@ -61,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       label: 'Phiếu sửa chữa',
       icon: ClipboardList,
       badge: openCount,
-      roles: ['admin', 'manager', 'receptionist', 'technician', 'cashier'],
+      roles: ['admin', 'manager', 'receptionist', 'technician'],
     },
     {
       id: 'kanban',
@@ -73,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       id: 'customers',
       label: 'Khách hàng',
       icon: Users,
-      roles: ['admin', 'manager', 'receptionist', 'cashier'],
+      roles: ['admin', 'manager', 'receptionist'],
     },
     {
       id: 'devices',
@@ -91,13 +94,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       id: 'payments',
       label: 'Thanh toán & Thu tiền',
       icon: CreditCard,
-      roles: ['admin', 'manager', 'cashier'],
+      roles: ['admin', 'manager', 'receptionist'],
+    },
+    {
+      id: 'promotions',
+      label: 'Ưu đãi & Khuyến mãi',
+      icon: BadgePercent,
+      roles: ['admin', 'manager', 'receptionist'],
     },
     {
       id: 'warranties',
       label: 'Sổ Bảo hành',
       icon: ShieldCheck,
-      roles: ['admin', 'manager', 'receptionist', 'technician', 'cashier'],
+      roles: ['admin', 'manager', 'receptionist', 'technician'],
     },
     {
       id: 'reports',
@@ -127,17 +136,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       id: 'lookup',
       label: 'Cổng tra cứu online',
       icon: SearchCode,
-      roles: ['admin', 'manager', 'receptionist', 'technician', 'cashier'],
+      roles: ['admin', 'manager', 'receptionist', 'technician'],
     },
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 no-print select-none border-r border-slate-800">
-      <div className="p-4 border-b border-slate-800">
+    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 no-print select-none border-r border-slate-800 h-full overflow-hidden">
+      <div className="p-4 border-b border-slate-800 shrink-0">
         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Điều hướng hệ thống</p>
       </div>
 
-      <nav className="p-3 space-y-1 overflow-y-auto flex-1 text-sm font-medium">
+      <nav className="p-3 space-y-1 overflow-y-auto min-h-0 flex-1 text-sm font-medium custom-dark-scrollbar">
         {navItems.map((item) => {
           // Check role permission
           if (!hasRole(item.roles as any)) return null;
@@ -171,10 +180,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
         })}
       </nav>
 
-      {/* Footer Store Tag */}
-      <div className="p-3.5 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-between">
-        <span>RepairFlow ERP</span>
-        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+      {/* Footer User Profile & Store Tag */}
+      <div className="p-3 border-t border-slate-800 shrink-0 space-y-2">
+        {currentUser && (
+          <button
+            onClick={() => onTabChange('profile')}
+            className={`w-full p-2 rounded-xl flex items-center justify-between text-left transition-all ${
+              currentTab === 'profile'
+                ? 'bg-indigo-600/30 text-white border border-indigo-500/40'
+                : 'hover:bg-slate-800/80 text-slate-300'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-xs">
+                {currentUser.full_name.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-white truncate">{currentUser.full_name}</p>
+                <p className="text-[10px] text-slate-400 capitalize">{currentUser.role}</p>
+              </div>
+            </div>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-1" />
+          </button>
+        )}
+
+        <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
+          <span>RepairFlow ERP</span>
+          <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">v2.5</span>
+        </div>
       </div>
     </aside>
   );

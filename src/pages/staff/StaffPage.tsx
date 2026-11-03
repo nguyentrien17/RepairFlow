@@ -185,10 +185,9 @@ export const StaffPage: React.FC = () => {
                     onChange={(e) => setRole(e.target.value as UserRole)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold"
                   >
+                    <option value="receptionist">Lễ tân & Thu ngân (Tiếp nhận / Thu tiền)</option>
                     <option value="technician">Kỹ thuật viên</option>
-                    <option value="receptionist">Lễ tân tiếp nhận</option>
-                    <option value="cashier">Thu ngân</option>
-                    <option value="manager">Quản lý</option>
+                    <option value="manager">Quản lý (Manager)</option>
                   </select>
                 </div>
               </div>

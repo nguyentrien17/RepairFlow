@@ -8,6 +8,9 @@ import {
   RotateCcw,
   ExternalLink,
   ChevronDown,
+  User,
+  Key,
+  LogOut,
 } from 'lucide-react';
 import { StorageService } from '../../services/mockStorage';
 import { useToast } from '../../contexts/ToastContext';
@@ -15,14 +18,16 @@ import { useToast } from '../../contexts/ToastContext';
 interface NavbarProps {
   onSearchSelect?: (ticketId: number) => void;
   onOpenLookup?: () => void;
+  onOpenProfile?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup }) => {
-  const { currentUser, switchRole } = useAuth();
+export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, onOpenProfile }) => {
+  const { currentUser, switchRole, logout } = useAuth();
   const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const q = e.target.value;
@@ -56,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup }) 
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-4 lg:px-6 flex items-center justify-between sticky top-0 z-30 no-print">
+    <header className="h-16 bg-white border-b border-slate-200 px-4 lg:px-6 flex items-center justify-between shrink-0 z-30 no-print select-none">
       {/* Brand & Title */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
@@ -151,21 +156,78 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup }) 
           >
             <option value="admin">Admin (Toàn quyền)</option>
             <option value="manager">Quản lý (Manager)</option>
-            <option value="receptionist">Lễ tân (Tiếp nhận)</option>
+            <option value="receptionist">Lễ tân & Thu ngân (Tiếp nhận / Thu tiền)</option>
             <option value="technician">Kỹ thuật viên</option>
-            <option value="cashier">Thu ngân (Cashier)</option>
           </select>
         </div>
 
-        {/* User Avatar & Name */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs border border-indigo-200">
-            {currentUser?.full_name?.charAt(0) || 'U'}
-          </div>
-          <div className="hidden lg:block text-left">
-            <p className="text-xs font-bold text-slate-800 leading-none">{currentUser?.full_name}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5 capitalize">{currentUser?.role}</p>
-          </div>
+        {/* User Avatar & Name with Dropdown Menu */}
+        <div className="relative pl-2 border-l border-slate-200">
+          <button
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition-colors text-left cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+              {currentUser?.full_name?.charAt(0) || 'U'}
+            </div>
+            <div className="hidden lg:block text-left">
+              <p className="text-xs font-bold text-slate-800 leading-none">{currentUser?.full_name}</p>
+              <p className="text-[10px] text-slate-500 mt-0.5 capitalize">{currentUser?.role}</p>
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+
+          {/* User Menu Dropdown */}
+          {showUserMenu && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-fadeIn">
+              <div className="px-4 py-2.5 border-b border-slate-100">
+                <p className="text-xs font-bold text-slate-900 leading-tight">{currentUser?.full_name}</p>
+                <p className="text-[11px] text-slate-500 truncate">{currentUser?.email}</p>
+                <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase">
+                  {currentUser?.role}
+                </span>
+              </div>
+
+              <div className="p-1 space-y-0.5">
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    onOpenProfile?.();
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <User className="w-4 h-4 text-slate-400" />
+                  <span>Thông tin tài khoản</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    onOpenProfile?.();
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Key className="w-4 h-4 text-slate-400" />
+                  <span>Đổi mật khẩu</span>
+                </button>
+              </div>
+
+              <div className="p-1 pt-1.5 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?')) {
+                      logout();
+                    }
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 text-rose-500" />
+                  <span>Đăng xuất tài khoản</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

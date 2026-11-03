@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../../services/mockStorage';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -12,6 +12,7 @@ import {
   Payment,
   PaymentMethod,
   PaymentType,
+  UserRole,
 } from '../../types';
 import {
   formatVND,
@@ -21,9 +22,18 @@ import {
   PRIORITY_CONFIG,
   getVietQRUrl,
   getTicketQrUrl,
+  translateStatus,
+  localizeText,
 } from '../../utils/formatters';
 import {
+  getAllowedTransitions,
+  getRoleAwaitingNotice,
+  ROLE_DISPLAY_NAMES,
+  StatusTransitionOption,
+} from '../../utils/statusTransitions';
+import {
   ArrowLeft,
+  ArrowRight,
   Printer,
   Wrench,
   CheckCircle2,
@@ -40,8 +50,26 @@ import {
   X,
   CreditCard,
   UserCheck,
+  Eye,
+  EyeOff,
+  Lock,
+  Zap,
+  Radio,
+  Smartphone,
+  CheckCheck,
+  RefreshCw,
+  Sparkles,
+  ShieldAlert,
+  Tag,
+  BadgePercent,
+  Gift,
 } from 'lucide-react';
 import { PrintModal } from '../../components/print/PrintTemplates';
+import { decryptPassword } from '../../utils/crypto';
+import { StatusTransitionModal } from '../../components/tickets/StatusTransitionModal';
+import { SearchableSelect, SearchableOption } from '../../components/common/SearchableSelect';
+import { CurrencyInput } from '../../components/common/CurrencyInput';
+import { NumberInput } from '../../components/common/NumberInput';
 
 interface TicketDetailPageProps {
   ticketId: number;
@@ -61,6 +89,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   // Status Change State
   const [selectedNextStatus, setSelectedNextStatus] = useState<RepairStatus>('Diagnosing');
   const [statusNote, setStatusNote] = useState('');
+  const [showSecretPassword, setShowSecretPassword] = useState(false);
 
   // Diagnostics State (UC-11)
   const diagnostics = StorageService.getDiagnostics(ticketId);
@@ -76,6 +105,17 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
     { type: 'labor', name: 'Công sửa chữa & vệ sinh mạch', qty: 1, price: 350000, warranty: 3 },
   ]);
   const [quoteDiscount, setQuoteDiscount] = useState<number>(0);
+  const activePromotions = StorageService.getPromotions().filter((p) => p.is_active);
+  const [selectedPromoCode, setSelectedPromoCode] = useState<string>('');
+  const [customPromoInput, setCustomPromoInput] = useState<string>('');
+  const [promoMessage, setPromoMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Quick Discount Modal for Tab 6 (Thanh toán & Công nợ)
+  const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
+  const [modalDiscountType, setModalDiscountType] = useState<'voucher' | 'custom'>('voucher');
+  const [modalPromoCode, setModalPromoCode] = useState<string>(ticket?.promotion_code || '');
+  const [modalCustomDiscount, setModalCustomDiscount] = useState<number>(ticket?.discount_amount || 0);
+  const [modalPromoMessage, setModalPromoMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // QC Checklist State (UC-20)
   const existingChecklist = StorageService.getChecklist(ticketId);
@@ -100,6 +140,25 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   const [payType, setPayType] = useState<PaymentType>('Final');
   const [payRef, setPayRef] = useState('');
   const [payNote, setPayNote] = useState('');
+
+  // Automated Payment & POS States
+  const [autoPayTab, setAutoPayTab] = useState<'vietqr' | 'smartpos'>('vietqr');
+  const [isSimulatingWebhook, setIsSimulatingWebhook] = useState(false);
+  const [showSmartPosModal, setShowSmartPosModal] = useState(false);
+  const [smartPosStep, setSmartPosStep] = useState<'idle' | 'pushing' | 'waiting_card' | 'processing' | 'success'>('idle');
+  const [smartPosCardType, setSmartPosCardType] = useState<'visa' | 'napas' | 'apple_pay'>('visa');
+
+  // Real-time listener for automated payment events
+  useEffect(() => {
+    const handleAutoPayment = (e: any) => {
+      const detail = e.detail;
+      if (detail?.ticket?.id === ticketId || detail?.payment?.ticket_id === ticketId) {
+        reloadTicket();
+      }
+    };
+    window.addEventListener('repairflow_auto_payment', handleAutoPayment);
+    return () => window.removeEventListener('repairflow_auto_payment', handleAutoPayment);
+  }, [ticketId]);
 
   // Handover State (UC-23, UC-24)
   const [receiverName, setReceiverName] = useState(ticket?.customer_name || '');
@@ -127,13 +186,116 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
     if (updated) setPayAmount(updated.debt_amount);
   };
 
-  // Status Change (UC-14)
-  const handleStatusChange = (newStatus: RepairStatus) => {
-    StorageService.updateTicket(ticket.id, {
-      status: newStatus,
-      primary_technician_name: currentUser?.full_name,
-    });
-    showToast(`Đã chuyển trạng thái sang: ${STATUS_CONFIG[newStatus].label}`, 'success');
+  // Status Change State & Accountability Modal
+  const [pendingStatus, setPendingStatus] = useState<RepairStatus | null>(null);
+  const [isAdminOverride, setIsAdminOverride] = useState(false);
+
+  // Role-Based Status Transitions Context
+  const userRole = (currentUser?.role || 'receptionist').toLowerCase() as UserRole;
+  const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
+  const allowedTransitions = getAllowedTransitions(ticket.status, userRole, isAdminOverride);
+  const awaitingNotice = getRoleAwaitingNotice(ticket.status, userRole);
+
+  // Searchable Part State for Tab 4
+  const [selectedPartId, setSelectedPartId] = useState<number | ''>('');
+  const [partExportQty, setPartExportQty] = useState<number>(1);
+
+  // Technician Searchable Options
+  const techOptions: SearchableOption[] = technicians.map((t) => ({
+    value: t.id,
+    label: t.full_name,
+    sublabel: `SĐT: ${t.phone} • ${t.role}`,
+    badge: t.is_active ? 'Sẵn sàng' : 'Vắng',
+    badgeColor: t.is_active
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : 'bg-slate-100 text-slate-500',
+  }));
+
+  // Part Searchable Options
+  const partOptions: SearchableOption[] = parts.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sublabel: `Mã: ${p.sku} • Giá: ${formatVND(p.selling_price)} • Tồn: ${p.stock_quantity}`,
+    badge:
+      p.stock_quantity <= 0
+        ? 'Hết hàng'
+        : p.stock_quantity <= p.min_stock_alert
+        ? `Sắp hết (${p.stock_quantity})`
+        : `Còn ${p.stock_quantity}`,
+    badgeColor:
+      p.stock_quantity <= 0
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
+        : p.stock_quantity <= p.min_stock_alert
+        ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    disabled: p.stock_quantity <= 0,
+  }));
+
+  // Trigger Accountability & Constraints Modal
+  const handleRequestStatusChange = (newStatus: RepairStatus) => {
+    if (newStatus === ticket.status) return;
+    setPendingStatus(newStatus);
+  };
+
+  // Confirmed by User with Responsibility Sign-Off
+  const handleConfirmStatusChange = (data: {
+    targetStatus: RepairStatus;
+    notes: string;
+    assignedTechId?: number;
+    debtApproved?: boolean;
+    cancellationReason?: string;
+    returnCondition?: string;
+  }) => {
+    const updates: Partial<RepairTicket> = {
+      status: data.targetStatus,
+    };
+
+    if (data.assignedTechId) {
+      const tech = technicians.find((t) => t.id === data.assignedTechId);
+      if (tech) {
+        updates.primary_technician_id = tech.id;
+        updates.primary_technician_name = tech.full_name;
+      }
+    }
+
+    if (data.cancellationReason) {
+      updates.cancellation_reason = data.cancellationReason;
+    }
+
+    // Save ticket update
+    StorageService.updateTicket(ticket.id, updates);
+
+    const roleStr = currentUser?.role || 'Nhân viên';
+    const nameStr = currentUser?.full_name || 'Người dùng';
+    const noteDetails = `[Cam kết trách nhiệm] ${data.notes}${
+      data.debtApproved ? ' • Phê duyệt cho khách nợ' : ''
+    }${data.returnCondition ? ` • Tình trạng hoàn trả: ${data.returnCondition}` : ''}`;
+
+    // Add explicit status history log
+    StorageService.addStatusHistory(
+      ticket.id,
+      ticket.status,
+      data.targetStatus,
+      `${nameStr} (${roleStr})`,
+      noteDetails,
+      roleStr,
+      `Cam kết trách nhiệm bởi ${nameStr}`
+    );
+
+    // Add system audit log
+    StorageService.addAuditLog(
+      'STATUS_TRANSITION',
+      'repair_tickets',
+      ticket.ticket_code,
+      `Chuyển trạng thái từ [${STATUS_CONFIG[ticket.status].label}] sang [${STATUS_CONFIG[data.targetStatus].label}]. Người chịu trách nhiệm: ${nameStr} (${roleStr}). Ghi chú: ${data.notes}`,
+      nameStr
+    );
+
+    showToast(
+      `Đã xác nhận trách nhiệm & chuyển trạng thái sang: ${STATUS_CONFIG[data.targetStatus].label}`,
+      'success'
+    );
+    setPendingStatus(null);
     reloadTicket();
   };
 
@@ -145,6 +307,13 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         primary_technician_id: tech.id,
         primary_technician_name: tech.full_name,
       });
+      StorageService.addAuditLog(
+        'ASSIGN_TECHNICIAN',
+        'repair_tickets',
+        ticket.ticket_code,
+        `Phân công kỹ thuật viên phụ trách: ${tech.full_name}`,
+        currentUser?.full_name
+      );
       showToast(`Đã phân công cho kỹ thuật viên: ${tech.full_name}`, 'success');
       reloadTicket();
     }
@@ -172,6 +341,38 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
     reloadTicket();
   };
 
+  // Quote Promotion Handlers
+  const handleApplyPromoToQuote = (codeToApply: string) => {
+    const clean = codeToApply.trim().toUpperCase();
+    if (!clean) {
+      setPromoMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn mã ưu đãi!' });
+      return;
+    }
+    const subtotal = quoteItems.reduce((acc, it) => acc + it.price * it.qty, 0);
+    if (subtotal <= 0) {
+      setPromoMessage({ type: 'error', text: 'Vui lòng nhập các hạng mục sửa chữa có giá trị trước khi áp dụng mã!' });
+      return;
+    }
+    const res = StorageService.validateAndCalculatePromotion(clean, subtotal);
+    if (res.valid) {
+      setSelectedPromoCode(res.promotion!.code);
+      setCustomPromoInput(res.promotion!.code);
+      setQuoteDiscount(res.discountAmount);
+      setPromoMessage({ type: 'success', text: res.message || 'Áp dụng mã ưu đãi thành công!' });
+      showToast(`Áp dụng mã "${res.promotion!.code}": Giảm ${formatVND(res.discountAmount)}`, 'success');
+    } else {
+      setPromoMessage({ type: 'error', text: res.message || 'Mã ưu đãi không hợp lệ.' });
+      showToast(res.message || 'Mã ưu đãi không hợp lệ!', 'error');
+    }
+  };
+
+  const handleClearQuotePromo = () => {
+    setSelectedPromoCode('');
+    setCustomPromoInput('');
+    setQuoteDiscount(0);
+    setPromoMessage(null);
+  };
+
   // Create Quote (UC-12)
   const handleCreateQuote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,6 +384,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       version: quotes.length + 1,
       subtotal,
       discount: Number(quoteDiscount),
+      promotion_code: selectedPromoCode || undefined,
       total_amount: total,
       status: 'Sent',
       created_by_name: currentUser?.full_name || 'Kỹ thuật viên',
@@ -199,15 +401,97 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       })),
     });
 
+    if (selectedPromoCode) {
+      StorageService.recordPromotionUsage(selectedPromoCode);
+    }
+
     StorageService.updateTicket(ticket.id, {
       subtotal_amount: subtotal,
       discount_amount: Number(quoteDiscount),
+      promotion_code: selectedPromoCode || undefined,
       final_amount: total,
       debt_amount: Math.max(0, total - ticket.paid_amount),
       status: 'Waiting_Approval',
     });
 
     showToast(`Đã tạo báo giá ${newQuote.quote_code} (${formatVND(total)})!`, 'success');
+    reloadTicket();
+  };
+
+  // Apply / Change Discount Voucher at Checkout
+  const handleApplyDiscountAtCheckout = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticket) return;
+
+    let appliedDiscount = 0;
+    let appliedCode: string | undefined = undefined;
+
+    if (modalDiscountType === 'voucher') {
+      if (!modalPromoCode.trim()) {
+        setModalPromoMessage({ type: 'error', text: 'Vui lòng chọn hoặc nhập mã ưu đãi!' });
+        return;
+      }
+      const res = StorageService.validateAndCalculatePromotion(modalPromoCode, ticket.subtotal_amount);
+      if (!res.valid) {
+        setModalPromoMessage({ type: 'error', text: res.message || 'Mã ưu đãi không hợp lệ!' });
+        return;
+      }
+      appliedDiscount = res.discountAmount;
+      appliedCode = res.promotion!.code;
+      StorageService.recordPromotionUsage(appliedCode);
+    } else {
+      appliedDiscount = Math.max(0, modalCustomDiscount);
+      if (ticket.subtotal_amount > 0 && appliedDiscount > ticket.subtotal_amount) {
+        setModalPromoMessage({ type: 'error', text: 'Số tiền giảm không được vượt quá chi phí gốc!' });
+        return;
+      }
+    }
+
+    const newFinal = Math.max(0, ticket.subtotal_amount - appliedDiscount);
+    const newDebt = Math.max(0, newFinal - ticket.paid_amount);
+
+    StorageService.updateTicket(ticket.id, {
+      discount_amount: appliedDiscount,
+      promotion_code: appliedCode,
+      final_amount: newFinal,
+      debt_amount: newDebt,
+    });
+
+    StorageService.addAuditLog(
+      'APPLY_DISCOUNT',
+      'repair_tickets',
+      ticket.ticket_code,
+      `Cập nhật ưu đãi cho phiếu: Giảm ${formatVND(appliedDiscount)} ${appliedCode ? `(Mã: ${appliedCode})` : '(Giảm trực tiếp)'}`,
+      currentUser?.full_name
+    );
+
+    showToast(`Đã áp dụng mức ưu đãi ${formatVND(appliedDiscount)} thành công!`, 'success');
+    setShowDiscountModal(false);
+    reloadTicket();
+  };
+
+  const handleRemoveDiscountAtCheckout = () => {
+    if (!ticket) return;
+    const newFinal = ticket.subtotal_amount;
+    const newDebt = Math.max(0, newFinal - ticket.paid_amount);
+
+    StorageService.updateTicket(ticket.id, {
+      discount_amount: 0,
+      promotion_code: undefined,
+      final_amount: newFinal,
+      debt_amount: newDebt,
+    });
+
+    StorageService.addAuditLog(
+      'REMOVE_DISCOUNT',
+      'repair_tickets',
+      ticket.ticket_code,
+      `Hủy bỏ ưu đãi giảm giá của phiếu sửa chữa`,
+      currentUser?.full_name
+    );
+
+    showToast('Đã hủy ưu đãi giảm giá trên phiếu!', 'info');
+    setShowDiscountModal(false);
     reloadTicket();
   };
 
@@ -242,9 +526,23 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   const handleAddPayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (payAmount <= 0) {
-      showToast('Vui lòng nhập số tiền thanh toán hợp lệ!', 'error');
+      showToast('Vui lòng nhập số tiền thanh toán lớn hơn 0!', 'error');
       return;
     }
+
+    if (ticket.final_amount > 0 && ticket.debt_amount <= 0) {
+      showToast('Phiếu sửa chữa này đã thanh toán 100%, không còn dư nợ để thu thêm!', 'error');
+      return;
+    }
+
+    if (ticket.final_amount > 0 && payAmount > ticket.debt_amount) {
+      showToast(
+        `Số tiền thu (${formatVND(payAmount)}) không được vượt quá số tiền nợ còn lại (${formatVND(ticket.debt_amount)})!`,
+        'error'
+      );
+      return;
+    }
+
     const payment = StorageService.addPayment({
       ticket_id: ticket.id,
       ticket_code: ticket.ticket_code,
@@ -253,12 +551,81 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       payment_method: payMethod,
       payment_type: payType,
       transaction_ref: payRef.trim() || undefined,
-      cashier_name: currentUser?.full_name || 'Thu ngân',
+      cashier_name: currentUser?.full_name || 'Lễ tân / Thu ngân',
       notes: payNote.trim() || undefined,
     });
 
     showToast(`Đã thu ${formatVND(payment.amount)} thành công! Mã phiếu thu: ${payment.payment_code}`, 'success');
     reloadTicket();
+  };
+
+  // Simulate Bank Webhook Auto-Payment (SePAY / Casso / Bank)
+  const handleSimulateWebhook = () => {
+    if (!ticket) return;
+    const amountToPay = ticket.debt_amount > 0 ? ticket.debt_amount : (ticket.final_amount || 850000);
+    setIsSimulatingWebhook(true);
+    setTimeout(() => {
+      setIsSimulatingWebhook(false);
+      const res = StorageService.processPaymentWebhook({
+        amount: amountToPay,
+        content: `${ticket.ticket_code} CK DICH VU`,
+        transaction_id: `MBFT${Date.now().toString().slice(-6)}`,
+        bank_brand: settings.bank_name || 'MB Bank',
+        gateway_provider: settings.payment_gateway_provider?.toUpperCase() || 'SEPAY',
+        payment_method: 'Bank_Transfer',
+      });
+      if (res.success) {
+        reloadTicket();
+        showToast(
+          `🔔 TING TING! Nhận tự động ${formatVND(amountToPay)} từ MB Bank qua Webhook. Đã cập nhật phiếu thu & xóa công nợ!`,
+          'success'
+        );
+      } else {
+        showToast(res.message, 'error');
+      }
+    }, 1200);
+  };
+
+  // Push command to SmartPOS & Simulate Customer Card Tap
+  const handleOpenSmartPos = () => {
+    setSmartPosStep('pushing');
+    setShowSmartPosModal(true);
+    setTimeout(() => {
+      setSmartPosStep('waiting_card');
+    }, 1000);
+  };
+
+  const handleSimulateCardPayment = (cardType: 'visa' | 'napas' | 'apple_pay') => {
+    if (!ticket) return;
+    setSmartPosCardType(cardType);
+    setSmartPosStep('processing');
+    setTimeout(() => {
+      const cardLabel =
+        cardType === 'visa'
+          ? 'Visa Contactless **** 6886'
+          : cardType === 'napas'
+          ? 'Napas Chip ATM **** 3102'
+          : 'Apple Pay (Techcombank)';
+      const amountToPay = ticket.debt_amount > 0 ? ticket.debt_amount : (ticket.final_amount || 850000);
+      StorageService.processPaymentWebhook({
+        amount: amountToPay,
+        content: `${ticket.ticket_code} SMARTPOS`,
+        transaction_id: `POS_${Date.now().toString().slice(-6)}`,
+        payment_method: 'POS_Card',
+        card_brand: cardLabel,
+        pos_terminal: settings.pos_terminal_id || 'VNPAY_POS_Q1_01',
+      });
+      setSmartPosStep('success');
+      setTimeout(() => {
+        setShowSmartPosModal(false);
+        setSmartPosStep('idle');
+        reloadTicket();
+        showToast(
+          `💳 Giao dịch SmartPOS thành công! Đã tự động thu ${formatVND(amountToPay)} [${cardLabel}].`,
+          'success'
+        );
+      }, 1300);
+    }, 1400);
   };
 
   // Handover & Warranty (UC-23, UC-24)
@@ -337,40 +704,134 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         </div>
       </div>
 
-      {/* Status Progress Flow Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between overflow-x-auto gap-2">
-        <span className="text-xs font-bold text-slate-500 whitespace-nowrap">Chuyển nhanh trạng thái:</span>
-        <div className="flex items-center gap-1.5 flex-nowrap">
-          {(['Received', 'Diagnosing', 'Waiting_Approval', 'In_Progress', 'Quality_Check', 'Ready_For_Pickup', 'Delivered'] as RepairStatus[]).map((st) => {
-            const isCurrent = ticket.status === st;
-            const cfg = STATUS_CONFIG[st];
-            return (
+      {/* Role-Based Status Transition & Workflow Action Panel */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* Top Header: Current Stage & User Authority Context */}
+        <div className="p-3.5 sm:px-4 bg-slate-50/80 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-indigo-600 shrink-0" />
+              Giai đoạn hiện tại:
+            </span>
+            <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border shadow-2xs ${STATUS_CONFIG[ticket.status].bg} ${STATUS_CONFIG[ticket.status].text} ${STATUS_CONFIG[ticket.status].border}`}>
+              {STATUS_CONFIG[ticket.status].label}
+            </span>
+
+            {/* Account / Role Badge */}
+            <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
+              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="text-slate-500">Tài khoản:</span>
+              <strong className="text-slate-800">{currentUser?.full_name || 'Nhân viên'}</strong>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                {ROLE_DISPLAY_NAMES[userRole] || userRole}
+              </span>
+            </div>
+          </div>
+
+          {/* Admin Override Toggle (Visible only for Admin & Manager) */}
+          {isAdminOrManager && (
+            <div className="flex items-center gap-2 self-start md:self-auto">
               <button
-                key={st}
-                onClick={() => handleStatusChange(st)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  isCurrent
-                    ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
+                type="button"
+                onClick={() => setIsAdminOverride(!isAdminOverride)}
+                className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isAdminOverride
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs font-bold'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
                 }`}
+                title="Bật/tắt chế độ quản trị để can thiệp chuyển đến bất kỳ trạng thái nào"
               >
-                {cfg.label}
+                <Zap className={`w-3.5 h-3.5 ${isAdminOverride ? 'text-amber-600 fill-amber-500' : 'text-slate-400'}`} />
+                <span>Chế độ Quản trị {isAdminOverride ? '(Đang bật toàn quyền)' : '(Toàn quyền chuyển)'}</span>
               </button>
-            );
-          })}
-          <button
-            onClick={() => {
-              const reason = window.prompt('Nhập lý do hủy phiếu sửa chữa:');
-              if (reason) {
-                StorageService.updateTicket(ticket.id, { status: 'Cancelled', cancellation_reason: reason });
-                showToast('Đã hủy phiếu sửa chữa.', 'info');
-                reloadTicket();
-              }
-            }}
-            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 whitespace-nowrap"
-          >
-            Hủy phiếu
-          </button>
+            </div>
+          )}
+        </div>
+
+        {/* Action Buttons corresponding strictly to user's account & role */}
+        <div className="p-3.5 sm:p-4">
+          {allowedTransitions.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  Trạng thái bạn được quyền chuyển ({allowedTransitions.length}):
+                </span>
+                {isAdminOverride && (
+                  <span className="text-[11px] text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    ⚠️ Đang ở chế độ Quản trị: Cho phép can thiệp mọi trạng thái
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {allowedTransitions.map((opt) => {
+                  const isCancel = opt.targetStatus === 'Cancelled';
+                  const isReverse = opt.isReverse;
+
+                  let btnStyle = 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs';
+                  if (opt.variant === 'success') {
+                    btnStyle = 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs';
+                  } else if (opt.variant === 'warning') {
+                    btnStyle = 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs';
+                  } else if (opt.variant === 'purple') {
+                    btnStyle = 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs';
+                  } else if (opt.variant === 'danger') {
+                    btnStyle = 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200';
+                  }
+
+                  return (
+                    <button
+                      key={opt.targetStatus}
+                      type="button"
+                      onClick={() => handleRequestStatusChange(opt.targetStatus)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer active:scale-98 ${btnStyle}`}
+                      title={opt.description}
+                    >
+                      {isCancel ? (
+                        <X className="w-3.5 h-3.5" />
+                      ) : isReverse ? (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      ) : (
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      )}
+                      <span>{opt.label}</span>
+                      {opt.badge && !isAdminOverride && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/15 font-normal">
+                          {opt.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">
+                    {awaitingNotice?.title || 'Không có thao tác chuyển trạng thái ở bước này'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {awaitingNotice?.message || `Giai đoạn hiện tại (${STATUS_CONFIG[ticket.status].label}) không có thao tác cho tài khoản ${ROLE_DISPLAY_NAMES[userRole] || userRole}.`}
+                  </p>
+                </div>
+              </div>
+              {awaitingNotice?.responsibleRole && (
+                <div className="text-left sm:text-right shrink-0">
+                  <span className="text-[10px] text-slate-400 block font-medium">Bộ phận chịu trách nhiệm</span>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 inline-block">
+                    {awaitingNotice.responsibleRole}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -453,9 +914,35 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
               </div>
 
               {ticket.device_password_hint && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
-                  <span className="font-semibold text-amber-900">Mật khẩu màn hình / BIOS:</span>
-                  <span className="font-mono font-bold text-amber-950 px-2 py-0.5 bg-amber-100 rounded">{ticket.device_password_hint}</span>
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-700" />
+                    <div>
+                      <span className="font-semibold text-amber-900 block">Mật khẩu màn hình / BIOS (Bảo mật):</span>
+                      <span className="text-[10px] text-amber-700">Chỉ Kỹ thuật viên & Quản lý được phép xem</span>
+                    </div>
+                  </div>
+                  {hasRole(['technician', 'manager', 'admin']) ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-amber-950 px-2.5 py-1 bg-amber-100/80 rounded border border-amber-300">
+                        {showSecretPassword
+                          ? decryptPassword(ticket.device_password_hint)
+                          : '••••••••'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowSecretPassword(!showSecretPassword)}
+                        className="p-1.5 text-amber-800 hover:bg-amber-200/60 rounded-lg transition-colors cursor-pointer"
+                        title={showSecretPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      >
+                        {showSecretPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-slate-400 italic">
+                      [Không có quyền xem]
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -464,19 +951,35 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
               <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-100">Lịch sử tiến độ xử lý</h3>
               <div className="space-y-3">
-                {StorageService.getStatusHistories(ticket.id).map((h, i) => (
-                  <div key={h.id} className="flex gap-3 text-xs">
-                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-600 mt-1 shrink-0" />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800">{h.to_status}</span>
-                        <span className="text-slate-400 text-[10px]">{formatDateTime(h.created_at)}</span>
+                {StorageService.getStatusHistories(ticket.id).map((h) => {
+                  const toCfg = STATUS_CONFIG[h.to_status];
+                  const fromCfg = h.from_status ? STATUS_CONFIG[h.from_status] : null;
+                  return (
+                    <div key={h.id} className="flex gap-3 text-xs">
+                      <div className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${toCfg ? 'bg-indigo-600' : 'bg-slate-400'}`} />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {fromCfg && (
+                            <>
+                              <span className="font-semibold text-slate-500">
+                                {fromCfg.label}
+                              </span>
+                              <span className="text-slate-400">→</span>
+                            </>
+                          )}
+                          <span className={`font-bold px-2 py-0.5 rounded-lg border ${toCfg ? `${toCfg.bg} ${toCfg.text} ${toCfg.border}` : 'bg-slate-100 text-slate-800 border-slate-300'}`}>
+                            {toCfg?.label || translateStatus(h.to_status)}
+                          </span>
+                          <span className="text-slate-400 text-[10px]">{formatDateTime(h.created_at)}</span>
+                        </div>
+                        <p className="text-slate-700 leading-relaxed font-medium">
+                          {localizeText(h.notes) || 'Cập nhật tiến trình'}
+                        </p>
+                        <span className="text-[10px] text-slate-400 block">Thực hiện bởi: {h.changed_by_name}</span>
                       </div>
-                      <p className="text-slate-600 mt-0.5">{h.notes || 'Cập nhật tiến trình'}</p>
-                      <span className="text-[10px] text-slate-400">Thực hiện bởi: {h.changed_by_name}</span>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -490,18 +993,13 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                 <h3 className="font-bold text-slate-900 text-sm">Phân công kỹ thuật</h3>
               </div>
               <p className="text-xs text-slate-500">Kỹ thuật viên phụ trách chính thiết bị này:</p>
-              <select
+              <SearchableSelect
+                options={techOptions}
                 value={ticket.primary_technician_id || ''}
-                onChange={(e) => handleAssignTech(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold focus:bg-white focus:outline-hidden"
-              >
-                <option value="">-- Chưa chọn kỹ thuật viên --</option>
-                {technicians.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.full_name} ({t.phone})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => handleAssignTech(Number(val))}
+                placeholder="-- Chọn hoặc tìm kiếm KTV --"
+                searchPlaceholder="Tìm theo tên hoặc SĐT..."
+              />
             </div>
 
             {/* Financial Summary */}
@@ -596,21 +1094,23 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Chi phí ước tính sơ bộ (VND)</label>
-                <input
-                  type="number"
+                <CurrencyInput
                   value={estCost}
-                  onChange={(e) => setEstCost(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:border-indigo-500 focus:outline-hidden"
+                  onChange={(val) => setEstCost(val)}
+                  min={0}
+                  placeholder="VD: 500.000"
+                  showInWords={false}
+                  quickPresets={[200000, 350000, 500000, 800000, 1200000]}
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Thời gian dự kiến (giờ)</label>
-                <input
-                  type="number"
-                  step="0.5"
+                <NumberInput
+                  min={0.5}
+                  step={0.5}
                   value={estHours}
-                  onChange={(e) => setEstHours(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:border-indigo-500 focus:outline-hidden"
+                  onChange={(val) => setEstHours(val)}
+                  unit="giờ"
                 />
               </div>
             </div>
@@ -672,11 +1172,31 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                 </tbody>
               </table>
 
+              <div className="pt-2 border-t border-slate-200 flex flex-col items-end gap-1 text-xs">
+                <div className="flex justify-between w-64 text-slate-600">
+                  <span>Chi phí tạm tính:</span>
+                  <span className="font-semibold">{formatVND(q.subtotal)}</span>
+                </div>
+                {q.discount > 0 && (
+                  <div className="flex justify-between w-64 text-emerald-700 font-semibold">
+                    <span className="flex items-center gap-1">
+                      <Tag className="w-3 h-3 text-emerald-600" />
+                      Ưu đãi {q.promotion_code ? `(${q.promotion_code})` : ''}:
+                    </span>
+                    <span>-{formatVND(q.discount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between w-64 text-slate-900 font-bold border-t border-slate-200 pt-1">
+                  <span>Tổng duyệt báo giá:</span>
+                  <span className="text-sm text-indigo-700">{formatVND(q.total_amount)}</span>
+                </div>
+              </div>
+
               {q.status !== 'Approved' && (
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={() => handleApproveQuote(q.id)}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Check className="w-3.5 h-3.5" />
                     Khách đồng ý sửa (Duyệt báo giá)
@@ -687,7 +1207,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                       if (reason) StorageService.updateQuoteStatus(q.id, 'Rejected', undefined, reason);
                       reloadTicket();
                     }}
-                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-1"
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                     Khách từ chối
@@ -718,30 +1238,29 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                     />
                   </div>
                   <div className="col-span-2">
-                    <input
-                      type="number"
+                    <NumberInput
                       placeholder="SL"
                       min={1}
                       value={item.qty}
-                      onChange={(e) => {
+                      onChange={(val) => {
                         const copy = [...quoteItems];
-                        copy[idx].qty = Number(e.target.value);
+                        copy[idx].qty = Math.max(1, val);
                         setQuoteItems(copy);
                       }}
-                      className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-center"
+                      className="text-center"
                     />
                   </div>
                   <div className="col-span-3">
-                    <input
-                      type="number"
+                    <CurrencyInput
                       placeholder="Đơn giá"
                       value={item.price}
-                      onChange={(e) => {
+                      min={0}
+                      onChange={(val) => {
                         const copy = [...quoteItems];
-                        copy[idx].price = Number(e.target.value);
+                        copy[idx].price = Math.max(0, val);
                         setQuoteItems(copy);
                       }}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-right"
+                      showInWords={false}
                     />
                   </div>
                   <div className="col-span-2 flex justify-end">
@@ -760,24 +1279,134 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             <button
               type="button"
               onClick={() => setQuoteItems([...quoteItems, { type: 'part', name: 'Linh kiện thay thế', qty: 1, price: 500000, warranty: 6 }])}
-              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" /> Thêm dòng linh kiện / tiền công
             </button>
 
-            <div className="flex justify-between items-center pt-3 border-t border-indigo-100">
-              <div className="flex items-center gap-2 text-xs">
-                <span>Giảm giá (VND):</span>
-                <input
-                  type="number"
-                  value={quoteDiscount}
-                  onChange={(e) => setQuoteDiscount(Number(e.target.value))}
-                  className="w-32 px-2 py-1 bg-white border border-slate-300 rounded text-xs"
-                />
+            {/* Promotion & Voucher Section */}
+            <div className="p-3.5 bg-white rounded-xl border border-indigo-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-indigo-950 flex items-center gap-1.5 text-xs">
+                  <BadgePercent className="w-4 h-4 text-indigo-600" />
+                  Áp dụng chương trình Ưu đãi & Voucher giảm giá
+                </span>
+                {selectedPromoCode && (
+                  <button
+                    type="button"
+                    onClick={handleClearQuotePromo}
+                    className="text-[11px] text-rose-600 hover:text-rose-800 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" /> Hủy mã ({selectedPromoCode})
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Select Active Promotion Chips */}
+              {activePromotions.length > 0 && (
+                <div>
+                  <p className="text-[11px] text-slate-500 mb-1.5 font-medium">Bấm để áp dụng nhanh mã ưu đãi sẵn có:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activePromotions.map((p) => {
+                      const isSelected = selectedPromoCode === p.code;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleApplyPromoToQuote(p.code)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                              : 'bg-indigo-50/70 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                          }`}
+                        >
+                          <Tag className="w-3 h-3" />
+                          <span>{p.code}</span>
+                          <span className={`text-[10px] px-1 rounded font-bold ${isSelected ? 'bg-indigo-700 text-indigo-100' : 'bg-white text-indigo-700'}`}>
+                            {p.discount_type === 'percentage' ? `-${p.discount_value}%` : `-${formatVND(p.discount_value)}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Enter Custom Promo Code */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Hoặc nhập mã voucher khác (VD: KHACHMOI30K)..."
+                    value={customPromoInput}
+                    onChange={(e) => setCustomPromoInput(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold uppercase text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPromoToQuote(customPromoInput)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer"
+                >
+                  Áp dụng mã
+                </button>
+              </div>
+
+              {/* Promo Validation Feedback */}
+              {promoMessage && (
+                <div
+                  className={`p-2 rounded-lg text-xs flex items-center gap-2 ${
+                    promoMessage.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {promoMessage.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{promoMessage.text}</span>
+                </div>
+              )}
+
+              {/* Manual adjustment */}
+              <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-500">Hoặc tự nhập số tiền giảm giá trực tiếp (VNĐ):</span>
+                <div className="w-48">
+                  <CurrencyInput
+                    value={quoteDiscount}
+                    onChange={(val) => {
+                      setQuoteDiscount(val);
+                      if (val === 0) setSelectedPromoCode('');
+                    }}
+                    min={0}
+                    max={quoteItems.reduce((acc, it) => acc + (it.price * it.qty), 0)}
+                    placeholder="0"
+                    showInWords={false}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Total Summary */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-3 border-t border-indigo-100">
+              <div className="text-xs space-y-0.5">
+                <p className="text-slate-600">
+                  Tạm tính: <strong>{formatVND(quoteItems.reduce((acc, it) => acc + (it.price * it.qty), 0))}</strong>
+                  {quoteDiscount > 0 && (
+                    <span className="text-emerald-700 font-bold ml-2">
+                      (Đã giảm: -{formatVND(quoteDiscount)})
+                    </span>
+                  )}
+                </p>
+                <p className="text-slate-900 font-bold text-sm">
+                  Tổng báo giá: <span className="text-indigo-700 font-extrabold">{formatVND(Math.max(0, quoteItems.reduce((acc, it) => acc + (it.price * it.qty), 0) - quoteDiscount))}</span>
+                </p>
               </div>
               <button
                 type="submit"
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30"
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 cursor-pointer"
               >
                 Gửi báo giá cho khách
               </button>
@@ -796,8 +1425,70 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
           </div>
 
+          {/* Fast Searchable Part Picker Bar */}
+          <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-200 text-xs space-y-3">
+            <h4 className="font-bold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wide">
+              <Boxes className="w-4 h-4 text-indigo-600" />
+              Tìm kiếm linh kiện xuất kho nhanh:
+            </h4>
+            <div className="flex flex-col md:flex-row items-end gap-3">
+              <div className="flex-1 w-full">
+                <SearchableSelect
+                  options={partOptions}
+                  value={selectedPartId}
+                  onChange={(val) => setSelectedPartId(val ? Number(val) : '')}
+                  placeholder="-- Gõ tên linh kiện hoặc mã SKU để tìm nhanh --"
+                  searchPlaceholder="Tìm linh kiện, pin, màn hình, quạt, sạc..."
+                  emptyMessage="Không tìm thấy linh kiện phù hợp"
+                />
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="w-24">
+                  <NumberInput
+                    min={1}
+                    value={partExportQty}
+                    onChange={(val) => setPartExportQty(Math.max(1, val))}
+                    placeholder="SL"
+                    className="text-center"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selectedPartId) {
+                      showToast('Vui lòng chọn linh kiện cần xuất!', 'error');
+                      return;
+                    }
+                    const part = parts.find((p) => p.id === Number(selectedPartId));
+                    if (!part) return;
+                    if (part.stock_quantity < partExportQty) {
+                      showToast(`Không đủ tồn kho (Hiện có: ${part.stock_quantity})!`, 'error');
+                      return;
+                    }
+                    StorageService.updatePartStock(part.id, -partExportQty);
+                    StorageService.addAuditLog(
+                      'EXPORT_PART',
+                      'parts',
+                      part.sku,
+                      `Xuất ${partExportQty} cái [${part.name}] cho phiếu ${ticket.ticket_code}`,
+                      currentUser?.full_name
+                    );
+                    showToast(`Đã xuất ${partExportQty} ${part.name} vào phiếu sửa chữa!`, 'success');
+                    setSelectedPartId('');
+                    setPartExportQty(1);
+                    reloadTicket();
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Xuất kho vào phiếu
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3">
-            <h4 className="font-bold text-slate-800">Xuất linh kiện từ kho vào phiếu này:</h4>
+            <h4 className="font-bold text-slate-800">Danh sách linh kiện phổ biến:</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {parts.map((p) => (
                 <div key={p.id} className="p-3 bg-white rounded-xl border border-slate-200 flex justify-between items-center">
@@ -882,6 +1573,72 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Add Payment Form & Payment History */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Order Financial Summary & Promo Bar */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                    <BadgePercent className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">Chi phí & Ưu đãi phiếu sửa chữa</h3>
+                    <p className="text-[11px] text-slate-500">Chi tiết đối soát giữa chi phí gốc, giảm giá khuyến mãi và công nợ</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalPromoCode(ticket.promotion_code || '');
+                    setModalCustomDiscount(ticket.discount_amount || 0);
+                    setModalPromoMessage(null);
+                    setShowDiscountModal(true);
+                  }}
+                  className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs border border-indigo-200 flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
+                >
+                  <Gift className="w-3.5 h-3.5" />
+                  <span>{ticket.discount_amount > 0 ? 'Đổi ưu đãi / Voucher' : 'Áp dụng mã ưu đãi'}</span>
+                </button>
+              </div>
+
+              {/* Grid of amounts */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[11px] text-slate-500 font-medium block">Chi phí gốc:</span>
+                  <span className="text-sm font-bold text-slate-800">{formatVND(ticket.subtotal_amount)}</span>
+                </div>
+
+                <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200">
+                  <span className="text-[11px] text-emerald-800 font-medium block flex items-center gap-1">
+                    <Tag className="w-3 h-3" />
+                    Ưu đãi đã giảm:
+                  </span>
+                  <span className="text-sm font-bold text-emerald-700">
+                    {ticket.discount_amount > 0 ? `-${formatVND(ticket.discount_amount)}` : '0 đ'}
+                  </span>
+                  {ticket.promotion_code && (
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 block mt-0.5">
+                      Mã: {ticket.promotion_code}
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200">
+                  <span className="text-[11px] text-indigo-800 font-medium block">Phải thanh toán:</span>
+                  <span className="text-sm font-extrabold text-indigo-900">{formatVND(ticket.final_amount)}</span>
+                </div>
+
+                <div className={`p-3 rounded-xl border ${ticket.debt_amount > 0 ? 'bg-rose-50/70 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <span className={`text-[11px] font-medium block ${ticket.debt_amount > 0 ? 'text-rose-700' : 'text-slate-500'}`}>
+                    {ticket.debt_amount > 0 ? 'Còn lại cần thu:' : 'Công nợ:'}
+                  </span>
+                  <span className={`text-sm font-bold ${ticket.debt_amount > 0 ? 'text-rose-700 font-mono font-extrabold' : 'text-emerald-700'}`}>
+                    {ticket.debt_amount > 0 ? formatVND(ticket.debt_amount) : '0 đ (Đã thu đủ)'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
               <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-100">Lịch sử thu tiền</h3>
               
@@ -892,104 +1649,300 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                   {payments.map((p) => (
                     <div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono font-bold text-indigo-700">{p.payment_code}</span>
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                            {p.payment_method === 'Cash' ? 'Tiền mặt' : 'Chuyển khoản'}
+                          {p.is_auto_verified ? (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1 text-[11px] border border-emerald-300">
+                              <Zap className="w-3 h-3 text-emerald-600" />
+                              {p.payment_method === 'POS_Card'
+                                ? `SmartPOS: ${p.card_brand || 'Thẻ'}`
+                                : `Auto Webhook: ${p.gateway_provider || 'Ngân hàng'}`}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-800 font-bold">
+                              {p.payment_method === 'Cash' ? 'Tiền mặt' : p.payment_method === 'POS_Card' ? 'Quẹt thẻ POS' : 'Chuyển khoản'}
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {p.payment_type === 'Deposit' ? 'Tiền cọc' : p.payment_type === 'Installment' ? 'Thu theo đợt' : 'Tất toán'}
                           </span>
                         </div>
-                        <p className="text-slate-500 text-[11px] mt-0.5">Thu ngân: {p.cashier_name} — {formatDateTime(p.created_at)}</p>
+                        <p className="text-slate-500 text-[11px] mt-1">
+                          Nguồn: <strong className="text-slate-700">{p.cashier_name}</strong> — {formatDateTime(p.created_at)}
+                          {p.transaction_ref && <span className="ml-1.5 font-mono text-indigo-600">(Ref: {p.transaction_ref})</span>}
+                        </p>
+                        {p.notes && <p className="text-[11px] text-slate-600 italic mt-0.5">{p.notes}</p>}
                       </div>
-                      <span className="font-bold text-slate-900 text-sm">{formatVND(p.amount)}</span>
+                      <div className="text-right shrink-0 ml-3">
+                        <span className="font-bold text-slate-900 text-sm block">{formatVND(p.amount)}</span>
+                        {p.is_auto_verified && (
+                          <span className="text-[10px] text-emerald-600 font-bold flex items-center justify-end gap-0.5 mt-0.5">
+                            <CheckCheck className="w-3 h-3" /> Tự động duyệt
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
 
               {/* Add Payment Form */}
-              <form onSubmit={handleAddPayment} className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200 space-y-4 text-xs">
-                <h4 className="font-bold text-emerald-950 uppercase">+ Lập phiếu thu tiền mới</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Số tiền thu (VND) *</label>
-                    <input
-                      type="number"
-                      required
-                      value={payAmount}
-                      onChange={(e) => setPayAmount(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-sm text-slate-900"
-                    />
+              {ticket.final_amount > 0 && ticket.debt_amount <= 0 ? (
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span className="text-sm">Phiếu sửa chữa đã thanh toán đủ 100%</span>
                   </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Hình thức thanh toán</label>
-                    <select
-                      value={payMethod}
-                      onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-semibold"
+                  <p className="text-emerald-700">
+                    Tổng chi phí <strong>{formatVND(ticket.final_amount)}</strong> đã được thu đủ. Hiện không còn công nợ cần thu thêm.
+                  </p>
+                  <div className="pt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPrintType('invoice')}
+                      className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
                     >
-                      <option value="Cash">Tiền mặt tại quầy</option>
-                      <option value="Bank_Transfer">Chuyển khoản VietQR</option>
-                      <option value="POS_Card">Quẹt thẻ POS</option>
-                    </select>
+                      <Printer className="w-3.5 h-3.5" />
+                      In hóa đơn thanh toán
+                    </button>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Loại thu</label>
-                    <select
-                      value={payType}
-                      onChange={(e) => setPayType(e.target.value as PaymentType)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl"
-                    >
-                      <option value="Final">Thanh toán hoàn tất</option>
-                      <option value="Deposit">Tiền đặt cọc</option>
-                      <option value="Installment">Thu theo đợt</option>
-                    </select>
+              ) : (
+                <form onSubmit={handleAddPayment} className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-4 text-xs">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-emerald-950 uppercase flex items-center gap-1.5">
+                      <DollarSign className="w-4 h-4 text-emerald-600" />
+                      Lập phiếu thu tiền mới
+                    </h4>
+                    {ticket.debt_amount > 0 && (
+                      <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                        Số tiền cần thu: {formatVND(ticket.debt_amount)}
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Mã tham chiếu ngân hàng</label>
-                    <input
-                      type="text"
-                      placeholder="VD: FT261103001"
-                      value={payRef}
-                      onChange={(e) => setPayRef(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl"
-                    />
-                  </div>
-                </div>
 
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-600/30 flex items-center gap-1.5 transition-all"
-                >
-                  <DollarSign className="w-4 h-4" />
-                  Xác nhận thu tiền & In phiếu thu
-                </button>
-              </form>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Số tiền thu (VND) *
+                      </label>
+                      <CurrencyInput
+                        value={payAmount}
+                        onChange={(val) => setPayAmount(val)}
+                        max={ticket.debt_amount > 0 ? ticket.debt_amount : undefined}
+                        min={0}
+                        quickMaxButtonLabel="Thu đúng số còn nợ"
+                        quickPresets={[50000, 100000, 200000, 500000, 1000000].filter(
+                          (p) => !ticket.debt_amount || p < ticket.debt_amount
+                        )}
+                        placeholder="Nhập số tiền..."
+                        showInWords={true}
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Hình thức thanh toán</label>
+                      <select
+                        value={payMethod}
+                        onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}
+                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-sm text-slate-800 focus:border-emerald-500 focus:outline-hidden"
+                      >
+                        <option value="Cash">Tiền mặt tại quầy</option>
+                        <option value="Bank_Transfer">Chuyển khoản VietQR</option>
+                        <option value="POS_Card">Quẹt thẻ POS</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Loại thu</label>
+                      <select
+                        value={payType}
+                        onChange={(e) => setPayType(e.target.value as PaymentType)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-medium"
+                      >
+                        <option value="Final">Thanh toán hoàn tất</option>
+                        <option value="Deposit">Tiền đặt cọc</option>
+                        <option value="Installment">Thu theo đợt</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Mã tham chiếu / Ghi chú thu</label>
+                      <input
+                        type="text"
+                        placeholder="VD: FT261103001 hoặc Ghi chú tiền mặt..."
+                        value={payRef}
+                        onChange={(e) => setPayRef(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={
+                      payAmount <= 0 ||
+                      (ticket.debt_amount > 0 && payAmount > ticket.debt_amount)
+                    }
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-md shadow-emerald-600/30 flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    Xác nhận thu tiền & In phiếu thu
+                  </button>
+                </form>
+              )}
             </div>
           </div>
 
-          {/* Right: VietQR Dynamic Bank Transfer */}
+          {/* Right: Automated Payment Hub (Auto VietQR Webhook & SmartPOS) */}
           <div className="space-y-6">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs text-center space-y-3">
-              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-900">
-                <QrCode className="w-4 h-4 text-indigo-600" />
-                <span>MÃ VIETQR CHUYỂN KHOẢN TỰ ĐỘNG</span>
-              </div>
-              <p className="text-[11px] text-slate-500">Quét bằng ứng dụng ngân hàng bất kỳ để tự điền số tiền và mã phiếu</p>
-              
-              <div className="p-2 bg-slate-50 rounded-xl border border-slate-200 inline-block shadow-inner">
-                <img src={vietQrUrl} alt="VietQR" className="w-44 h-44 mx-auto rounded" />
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              {/* Payment Channel Selector Tabs */}
+              <div className="flex bg-slate-100 p-1 rounded-xl gap-1 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setAutoPayTab('vietqr')}
+                  className={`flex-1 py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                    autoPayTab === 'vietqr'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>VietQR Webhook</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAutoPayTab('smartpos')}
+                  className={`flex-1 py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                    autoPayTab === 'smartpos'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Máy SmartPOS</span>
+                </button>
               </div>
 
-              <div className="text-left bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
-                <p><span className="text-slate-500">Ngân hàng:</span> <strong>{settings.bank_name}</strong></p>
-                <p><span className="text-slate-500">Số TK:</span> <strong className="font-mono text-indigo-700">{settings.bank_account_no}</strong></p>
-                <p><span className="text-slate-500">Chủ TK:</span> <strong>{settings.bank_account_name}</strong></p>
-                <p><span className="text-slate-500">Số tiền:</span> <strong className="text-rose-600">{formatVND(ticket.debt_amount || ticket.final_amount)}</strong></p>
-                <p><span className="text-slate-500">Nội dung CK:</span> <strong className="font-mono">{ticket.ticket_code}</strong></p>
-              </div>
+              {/* View 1: Auto VietQR Webhook */}
+              {autoPayTab === 'vietqr' && (
+                <div className="space-y-3.5 text-center">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-1">
+                    <span className="flex items-center gap-1.5">
+                      <QrCode className="w-4 h-4 text-indigo-600" />
+                      <span>VIETQR TỰ ĐỘNG NHẬN DIỆN</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Đang lắng nghe
+                    </span>
+                  </div>
+
+                  {ticket.debt_amount === 0 ? (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                      <p className="font-bold text-emerald-900 text-xs">Phiếu đã hoàn tất thanh toán 100%</p>
+                      <p className="text-[11px] text-emerald-700">Công nợ hiện tại: 0 đ</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="p-2 bg-slate-50 rounded-xl border border-slate-200 inline-block shadow-inner">
+                        <img src={vietQrUrl} alt="VietQR" className="w-44 h-44 mx-auto rounded" />
+                      </div>
+
+                      <div className="text-left bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
+                        <p><span className="text-slate-500">Ngân hàng:</span> <strong>{settings.bank_name}</strong></p>
+                        <p><span className="text-slate-500">Số TK:</span> <strong className="font-mono text-indigo-700">{settings.bank_account_no}</strong></p>
+                        <p><span className="text-slate-500">Chủ TK:</span> <strong>{settings.bank_account_name}</strong></p>
+                        <p><span className="text-slate-500">Số tiền:</span> <strong className="text-rose-600 font-bold">{formatVND(ticket.debt_amount || ticket.final_amount)}</strong></p>
+                        <p><span className="text-slate-500">Nội dung CK:</span> <strong className="font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">{ticket.ticket_code}</strong></p>
+                      </div>
+
+                      {/* Test Webhook simulation button */}
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={handleSimulateWebhook}
+                          disabled={isSimulatingWebhook}
+                          className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl font-bold text-xs shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          {isSimulatingWebhook ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Ngân hàng đang bắn Webhook về...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-3.5 h-3.5 fill-current" />
+                              <span>Mô phỏng Khách vừa chuyển khoản (Test Webhook)</span>
+                            </>
+                          )}
+                        </button>
+                        <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed text-left">
+                          💡 <em>Khi khách quét mã trên điện thoại và chuyển tiền thật, cổng SePAY/Ngân hàng sẽ bắn Webhook tự động tạo phiếu thu và xóa nợ đúng như khi bấm nút trên.</em>
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* View 2: SmartPOS Integration */}
+              {autoPayTab === 'smartpos' && (
+                <div className="space-y-3.5 text-center">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-1">
+                    <span className="flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-indigo-600" />
+                      <span>KẾT NỐI MÁY QUẸT THẺ SMARTPOS</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      POS Online
+                    </span>
+                  </div>
+
+                  {ticket.debt_amount === 0 ? (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                      <p className="font-bold text-emerald-900 text-xs">Phiếu đã hoàn tất thanh toán 100%</p>
+                      <p className="text-[11px] text-emerald-700">Không còn công nợ cần quẹt thẻ</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="p-4 bg-slate-900 text-white rounded-2xl shadow-inner text-left space-y-2.5">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800 pb-2">
+                          <span>Thiết bị: <strong className="text-white font-mono">{settings.pos_terminal_id || 'VNPAY_POS_Q1_01'}</strong></span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">LAN Socket Ready</span>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] text-slate-400">Số tiền đẩy sang POS:</p>
+                          <p className="text-xl font-bold font-mono text-emerald-400">{formatVND(ticket.debt_amount || ticket.final_amount)}</p>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                          <span>Phiếu: {ticket.ticket_code}</span>
+                          <span>Hỗ trợ: Visa, NAPAS, Apple Pay</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleOpenSmartPos}
+                        className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-xl font-bold text-xs shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        <span>📲 Bắn lệnh thanh toán sang Máy SmartPOS</span>
+                      </button>
+
+                      <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed text-left">
+                        💡 <em>Lệnh sẽ truyền trực tiếp sang màn hình máy POS tại quầy. Sau khi khách quẹt/chạm thẻ, máy POS tự động xác nhận và in hóa đơn cà thẻ.</em>
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1065,6 +2018,375 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         </div>
       )}
 
+      {/* Interactive SmartPOS Terminal Simulation Modal */}
+      {showSmartPosModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-3xl border border-slate-700 shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in duration-200">
+            {/* POS Top Terminal Header */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                <span className="font-mono text-xs font-bold text-slate-300">
+                  {settings.pos_terminal_id || 'VNPAY_POS_Q1_01'}
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-400">SmartPOS Android Terminal</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSmartPosModal(false);
+                  setSmartPosStep('idle');
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Simulated POS Screen */}
+            <div className="p-6 text-center space-y-4">
+              {smartPosStep === 'pushing' && (
+                <div className="py-8 space-y-3">
+                  <RefreshCw className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
+                  <p className="font-bold text-sm text-slate-200">Đang đẩy lệnh sang máy POS...</p>
+                  <p className="text-xs text-slate-400">Kết nối Socket LAN: {settings.pos_ip_address || '192.168.1.188:8080'}</p>
+                </div>
+              )}
+
+              {smartPosStep === 'waiting_card' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700">
+                    <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Số tiền thanh toán</p>
+                    <p className="text-3xl font-extrabold text-emerald-400 font-mono my-1">
+                      {formatVND(ticket.debt_amount || ticket.final_amount)}
+                    </p>
+                    <p className="text-xs text-slate-400">Phiếu: <strong className="text-white font-mono">{ticket.ticket_code}</strong></p>
+                  </div>
+
+                  <div className="py-2">
+                    <p className="text-xs font-bold text-slate-300 animate-pulse uppercase tracking-wider">
+                      ▼ XIN MỜI CHẠM HOẶC QUẸT THẺ ▼
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">Chọn loại thẻ khách thanh toán để mô phỏng:</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleSimulateCardPayment('visa')}
+                      className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl border border-slate-600 flex items-center justify-between transition-all cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-amber-400" />
+                        <span>Chạm thẻ Visa / MasterCard Contactless</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">Chạm sóng NFC</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSimulateCardPayment('napas')}
+                      className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl border border-slate-600 flex items-center justify-between transition-all cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-emerald-400" />
+                        <span>Cắm thẻ ATM NAPAS chip nội địa</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">Cắm khe chip</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSimulateCardPayment('apple_pay')}
+                      className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl border border-slate-600 flex items-center justify-between transition-all cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4 text-indigo-400" />
+                        <span>Chạm Apple Pay / Google Wallet</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">Chạm điện thoại</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {smartPosStep === 'processing' && (
+                <div className="py-8 space-y-3">
+                  <RefreshCw className="w-10 h-10 text-emerald-400 animate-spin mx-auto" />
+                  <p className="font-bold text-sm text-slate-200">Đang xử lý giao dịch thẻ...</p>
+                  <p className="text-xs text-slate-400 font-mono">Đọc chip EMV & Xác thực trung tâm chuyển mạch</p>
+                </div>
+              )}
+
+              {smartPosStep === 'success' && (
+                <div className="py-6 space-y-2">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/40">
+                    <Check className="w-8 h-8" />
+                  </div>
+                  <p className="font-bold text-base text-emerald-400">GIAO DỊCH THÀNH CÔNG!</p>
+                  <p className="text-xs text-slate-300">Máy POS đã in hóa đơn & tự động đồng bộ về RepairFlow</p>
+                </div>
+              )}
+            </div>
+
+            {/* POS Footer Cancel */}
+            <div className="p-3 bg-slate-950 border-t border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSmartPosModal(false);
+                  setSmartPosStep('idle');
+                }}
+                className="text-xs text-slate-400 hover:text-slate-200 font-semibold"
+              >
+                Hủy phiên giao dịch POS
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Discount & Promotion Modal */}
+      {showDiscountModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <BadgePercent className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Ưu đãi giảm giá & Voucher</h3>
+                  <p className="text-[11px] text-slate-500">Áp dụng trực tiếp cho phiếu {ticket.ticket_code}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDiscountModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleApplyDiscountAtCheckout} className="p-6 space-y-4 text-xs">
+              {/* Current Cost Notice */}
+              <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Tổng chi phí dịch vụ gốc:</span>
+                  <span className="text-sm font-extrabold text-indigo-900">{formatVND(ticket.subtotal_amount)}</span>
+                </div>
+                {ticket.discount_amount > 0 && (
+                  <div className="text-right">
+                    <span className="text-[11px] text-emerald-700 font-medium block">Hiện đang giảm:</span>
+                    <span className="text-xs font-bold text-emerald-800">-{formatVND(ticket.discount_amount)} {ticket.promotion_code ? `(${ticket.promotion_code})` : ''}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Mode Selection */}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1.5">Cách thức áp dụng ưu đãi</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label
+                    className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
+                      modalDiscountType === 'voucher'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="modalDiscountType"
+                      checked={modalDiscountType === 'voucher'}
+                      onChange={() => setModalDiscountType('voucher')}
+                      className="text-indigo-600"
+                    />
+                    <Tag className="w-4 h-4 text-indigo-600" />
+                    <span>Mã ưu đãi / Voucher</span>
+                  </label>
+
+                  <label
+                    className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
+                      modalDiscountType === 'custom'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="modalDiscountType"
+                      checked={modalDiscountType === 'custom'}
+                      onChange={() => setModalDiscountType('custom')}
+                      className="text-indigo-600"
+                    />
+                    <DollarSign className="w-4 h-4 text-indigo-600" />
+                    <span>Giảm tiền tùy chỉnh</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Voucher Mode Form */}
+              {modalDiscountType === 'voucher' ? (
+                <div className="space-y-3">
+                  {activePromotions.length > 0 && (
+                    <div>
+                      <p className="text-[11px] text-slate-500 mb-1.5 font-medium">Bấm vào mã có sẵn để chọn nhanh:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {activePromotions.map((p) => {
+                          const isSelected = modalPromoCode.toUpperCase() === p.code.toUpperCase();
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setModalPromoCode(p.code);
+                                setModalPromoMessage(null);
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                  : 'bg-indigo-50/60 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                              }`}
+                            >
+                              <Tag className="w-3 h-3" />
+                              <span>{p.code}</span>
+                              <span className={`text-[10px] px-1 rounded font-bold ${isSelected ? 'bg-indigo-700 text-indigo-100' : 'bg-white text-indigo-700'}`}>
+                                {p.discount_type === 'percentage' ? `-${p.discount_value}%` : `-${formatVND(p.discount_value)}`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Mã ưu đãi / Coupon</label>
+                    <input
+                      type="text"
+                      placeholder="VD: KHACHQUEN10, HSSV50K..."
+                      value={modalPromoCode}
+                      onChange={(e) => {
+                        setModalPromoCode(e.target.value.toUpperCase().replace(/\s+/g, ''));
+                        setModalPromoMessage(null);
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold uppercase text-slate-800 text-sm focus:bg-white focus:border-indigo-500 focus:outline-hidden"
+                    />
+                  </div>
+
+                  {modalPromoCode && (() => {
+                    const check = StorageService.validateAndCalculatePromotion(modalPromoCode, ticket.subtotal_amount);
+                    return (
+                      <div
+                        className={`p-3 rounded-xl border flex items-start gap-2 ${
+                          check.valid
+                            ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                            : 'bg-rose-50 text-rose-900 border-rose-200'
+                        }`}
+                      >
+                        {check.valid ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        )}
+                        <div className="space-y-0.5">
+                          <p className="font-bold">{check.message}</p>
+                          {check.valid && (
+                            <p className="text-[11px] text-emerald-700">
+                              Sau giảm giá, số tiền còn lại cần thu: <strong>{formatVND(Math.max(0, ticket.subtotal_amount - check.discountAmount - ticket.paid_amount))}</strong>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Số tiền giảm giá trực tiếp (VNĐ)
+                    </label>
+                    <CurrencyInput
+                      value={modalCustomDiscount}
+                      onChange={(val) => {
+                        setModalCustomDiscount(val);
+                        setModalPromoMessage(null);
+                      }}
+                      min={0}
+                      max={ticket.subtotal_amount}
+                      placeholder="Nhập số tiền..."
+                      showInWords={false}
+                      quickPresets={[20000, 50000, 100000, 200000]}
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Chi phí gốc:</span>
+                      <span>{formatVND(ticket.subtotal_amount)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-700 font-bold">
+                      <span>Giảm giá:</span>
+                      <span>-{formatVND(modalCustomDiscount)}</span>
+                    </div>
+                    <div className="flex justify-between text-indigo-950 font-bold pt-1 border-t border-slate-200">
+                      <span>Tổng phải thanh toán:</span>
+                      <span className="text-sm">{formatVND(Math.max(0, ticket.subtotal_amount - modalCustomDiscount))}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {modalPromoMessage && (
+                <div
+                  className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
+                    modalPromoMessage.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{modalPromoMessage.text}</span>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                {ticket.discount_amount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={handleRemoveDiscountAtCheckout}
+                    className="text-rose-600 hover:text-rose-800 text-xs font-semibold cursor-pointer"
+                  >
+                    Hủy bỏ ưu đãi hiện có
+                  </button>
+                ) : (
+                  <div></div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDiscountModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
+                  >
+                    Xác nhận áp dụng
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Print Modal Component */}
       {printType && (
         <PrintModal
@@ -1072,6 +2394,20 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
           settings={settings}
           type={printType}
           onClose={() => setPrintType(null)}
+        />
+      )}
+
+      {/* Status Transition & Accountability Modal */}
+      {pendingStatus && (
+        <StatusTransitionModal
+          isOpen={Boolean(pendingStatus)}
+          onClose={() => setPendingStatus(null)}
+          ticket={ticket}
+          targetStatus={pendingStatus}
+          currentUser={currentUser}
+          technicians={technicians}
+          isOverrideMode={isAdminOverride}
+          onConfirm={handleConfirmStatusChange}
         />
       )}
     </div>
