@@ -1,0 +1,6 @@
+{
+  "name": "RepairFlow - Quản lý tiếp nhận & sửa chữa thiết bị điện tử",
+  "description": "Hệ thống quản lý toàn diện quy trình tiếp nhận, chẩn đoán, báo giá, sửa chữa, kiểm tra chất lượng, kho linh kiện, thanh toán và bảo hành thiết bị điện tử.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
