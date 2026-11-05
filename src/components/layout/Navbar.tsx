@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { StorageService } from '../../services/mockStorage';
 import { useToast } from '../../contexts/ToastContext';
+import { LogoutConfirmModal } from '../common/LogoutConfirmModal';
 
 interface NavbarProps {
   onSearchSelect?: (ticketId: number) => void;
@@ -28,6 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const q = e.target.value;
@@ -52,12 +55,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
     setSearchResults(matches.slice(0, 5));
   };
 
-  const handleResetData = () => {
-    if (window.confirm('Khôi phục toàn bộ dữ liệu mẫu (Khách hàng, phiếu sửa chữa, kho linh kiện)?')) {
-      StorageService.resetToSampleData();
-      showToast('Đã khôi phục dữ liệu mẫu thành công!', 'info');
+  const handleConfirmReset = () => {
+    StorageService.resetToSampleData();
+    showToast('Đã khôi phục dữ liệu mẫu thành công!', 'info');
+    setShowResetConfirm(false);
+    setTimeout(() => {
       window.location.reload();
-    }
+    }, 400);
+  };
+
+  const handleConfirmLogout = () => {
+    logout();
+    showToast('Đã đăng xuất khỏi hệ thống thành công!', 'info');
   };
 
   return (
@@ -124,12 +133,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
       </div>
 
       {/* Right Controls: Role Switcher & Action Tools */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         {/* Reset to sample data button */}
         <button
-          onClick={handleResetData}
+          onClick={() => setShowResetConfirm(true)}
           title="Khôi phục dữ liệu mẫu ban đầu"
-          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <RotateCcw className="w-4 h-4" />
           <span className="hidden xl:inline">Reset mẫu</span>
@@ -139,7 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
         {onOpenLookup && (
           <button
             onClick={onOpenLookup}
-            className="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg flex items-center gap-1.5 transition-colors border border-emerald-200"
+            className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg flex items-center gap-1.5 transition-colors border border-emerald-200 cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Tra cứu khách</span>
@@ -161,8 +170,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
           </select>
         </div>
 
+        {/* Direct Quick Logout Button */}
+        <button
+          onClick={() => setShowLogoutModal(true)}
+          title="Đăng xuất khỏi hệ thống"
+          className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Đăng xuất</span>
+        </button>
+
         {/* User Avatar & Name with Dropdown Menu */}
-        <div className="relative pl-2 border-l border-slate-200">
+        <div className="relative pl-1 border-l border-slate-200">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
             className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition-colors text-left cursor-pointer"
@@ -216,9 +235,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
                 <button
                   onClick={() => {
                     setShowUserMenu(false);
-                    if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?')) {
-                      logout();
-                    }
+                    setShowLogoutModal(true);
                   }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
                 >
@@ -230,6 +247,44 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
           )}
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={handleConfirmLogout}
+      />
+
+      {/* Reset Sample Data Confirmation Dialog */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center mb-3">
+              <RotateCcw className="w-5 h-5" />
+            </div>
+            <h4 className="text-base font-bold text-slate-900">Khôi phục dữ liệu mẫu?</h4>
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              Thao tác này sẽ đặt lại toàn bộ danh sách phiếu sửa chữa, khách hàng, và linh kiện về trạng thái ban đầu.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReset}
+                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-200 cursor-pointer"
+              >
+                Xác nhận khôi phục
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

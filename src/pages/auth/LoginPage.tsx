@@ -190,6 +190,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                   <input
                     type="text"
                     required
+                    autoComplete="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="VD: admin, letan, kythuat..."
@@ -212,6 +213,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Nhập mật khẩu..."
@@ -220,7 +222,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -233,14 +236,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                   />
                   <span className="text-xs text-slate-600">Ghi nhớ phiên đăng nhập</span>
                 </label>
 
-                <span className="text-xs text-indigo-600 hover:underline cursor-pointer">
-                  Quên mật khẩu?
-                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('admin');
+                    setPassword('admin');
+                    showToast('Đã điền thông tin tài khoản Admin mẫu', 'info');
+                  }}
+                  className="text-xs text-indigo-600 hover:underline cursor-pointer"
+                >
+                  Quên mật khẩu? (Điền lại Admin)
+                </button>
               </div>
 
               <button
@@ -264,46 +275,75 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
               <div className="flex items-center justify-between mb-2.5">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Đăng nhập nhanh (1 chạm trải nghiệm)</span>
+                  <span>Đăng nhập nhanh 1 chạm (Chọn tài khoản)</span>
                 </p>
-                <span className="text-[10px] text-slate-400">Chọn vai trò</span>
+                <span className="text-[10px] text-slate-400">Click để vào ngay</span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <button
                   type="button"
                   onClick={() => handleQuickLogin('admin', 'admin')}
-                  className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 transition-all text-left group cursor-pointer"
+                  className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
+                    username === 'admin'
+                      ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
+                      : 'border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
                 >
                   <p className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 leading-none">Admin</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Toàn quyền</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">Toàn quyền</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleQuickLogin('manager', '123')}
-                  className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 transition-all text-left group cursor-pointer"
+                  className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
+                    username === 'manager'
+                      ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
+                      : 'border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
                 >
                   <p className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 leading-none">Quản lý</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Báo cáo & kho</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">Báo cáo & kho</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleQuickLogin('letan', '123')}
-                  className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 transition-all text-left group cursor-pointer"
+                  className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
+                    username === 'letan'
+                      ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
+                      : 'border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
                 >
                   <p className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 leading-none">Lễ tân</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Tiếp nhận & thu</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">Tiếp nhận & thu</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleQuickLogin('kythuat', '123')}
-                  className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 transition-all text-left group cursor-pointer"
+                  className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
+                    username === 'kythuat'
+                      ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
+                      : 'border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
                 >
                   <p className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 leading-none">KTV Trưởng</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Sửa & QC</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">Sửa máy & QC</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('thungan', '123')}
+                  className={`p-2 rounded-xl border transition-all text-left group cursor-pointer col-span-2 sm:col-span-1 ${
+                    username === 'thungan'
+                      ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
+                      : 'border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
+                >
+                  <p className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 leading-none">Thu ngân 2</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">Bán lẻ & quỹ</p>
                 </button>
               </div>
             </div>

@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { StorageService } from '../../services/mockStorage';
 import { formatDateTime, localizeText } from '../../utils/formatters';
+import { LogoutConfirmModal } from '../../components/common/LogoutConfirmModal';
 
 const ROLE_DISPLAY_CONFIG: Record<
   string,
@@ -118,6 +119,7 @@ export const ProfilePage: React.FC = () => {
   const [showCurrentPass, setShowCurrentPass] = useState(false);
   const [showNewPass, setShowNewPass] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   if (!currentUser) {
     return (
@@ -215,11 +217,7 @@ export const ProfilePage: React.FC = () => {
           </div>
 
           <button
-            onClick={() => {
-              if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?')) {
-                logout();
-              }
-            }}
+            onClick={() => setShowLogoutModal(true)}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold backdrop-blur-xs border border-white/20 transition-all cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -504,6 +502,27 @@ export const ProfilePage: React.FC = () => {
                 </button>
               </div>
             </form>
+
+            {/* Session & Logout Section */}
+            <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-rose-50/50 border border-rose-100">
+              <div>
+                <h4 className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                  <LogOut className="w-4 h-4 text-rose-600" />
+                  <span>Kết thúc phiên làm việc</span>
+                </h4>
+                <p className="text-[11px] text-rose-600/80 mt-0.5">
+                  Đăng xuất khỏi thiết bị này để đảm bảo an toàn dữ liệu và quyền truy cập ca làm việc.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(true)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm shadow-rose-200 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Đăng xuất tài khoản</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -614,6 +633,16 @@ export const ProfilePage: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={() => {
+          logout();
+          showToast('Đã đăng xuất tài khoản thành công!', 'info');
+        }}
+      />
     </div>
   );
 };

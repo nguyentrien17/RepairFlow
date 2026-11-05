@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -16,8 +16,11 @@ import {
   SearchCode,
   BadgePercent,
   Store,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
+import { LogoutConfirmModal } from '../common/LogoutConfirmModal';
 
 export type TabType =
   | 'dashboard'
@@ -45,7 +48,14 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openCount = 0 }) => {
-  const { hasRole, currentUser } = useAuth();
+  const { hasRole, currentUser, logout } = useAuth();
+  const { showToast } = useToast();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleConfirmLogout = () => {
+    logout();
+    showToast('Đã đăng xuất khỏi hệ thống thành công!', 'info');
+  };
 
   const navItems = [
     {
@@ -191,25 +201,40 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       {/* Footer User Profile & Store Tag */}
       <div className="p-3 border-t border-slate-800 shrink-0 space-y-2">
         {currentUser && (
-          <button
-            onClick={() => onTabChange('profile')}
-            className={`w-full p-2 rounded-xl flex items-center justify-between text-left transition-all ${
-              currentTab === 'profile'
-                ? 'bg-indigo-600/30 text-white border border-indigo-500/40'
-                : 'hover:bg-slate-800/80 text-slate-300'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-xs">
-                {currentUser.full_name.charAt(0)}
+          <div className="space-y-1.5">
+            <button
+              onClick={() => onTabChange('profile')}
+              className={`w-full p-2 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer ${
+                currentTab === 'profile'
+                  ? 'bg-indigo-600/30 text-white border border-indigo-500/40'
+                  : 'hover:bg-slate-800/80 text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-xs">
+                  {currentUser.full_name.charAt(0)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-white truncate">{currentUser.full_name}</p>
+                  <p className="text-[10px] text-slate-400 capitalize">{currentUser.role}</p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-white truncate">{currentUser.full_name}</p>
-                <p className="text-[10px] text-slate-400 capitalize">{currentUser.role}</p>
-              </div>
-            </div>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-1" />
-          </button>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-1" />
+            </button>
+
+            {/* Direct Logout Button */}
+            <button
+              type="button"
+              onClick={() => setShowLogoutModal(true)}
+              className="w-full px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 text-xs font-medium flex items-center justify-between transition-colors group cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LogOut className="w-3.5 h-3.5 text-slate-500 group-hover:text-rose-400 transition-colors" />
+                <span>Đăng xuất</span>
+              </span>
+              <span className="text-[10px] text-slate-500 group-hover:text-rose-400 font-mono">Thoát</span>
+            </button>
+          </div>
         )}
 
         <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
@@ -217,6 +242,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
           <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">v2.5</span>
         </div>
       </div>
+
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={handleConfirmLogout}
+      />
     </aside>
   );
 };

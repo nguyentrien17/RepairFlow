@@ -110,8 +110,9 @@ export const RetailSalesPage: React.FC = () => {
   const [paidAmountInput, setPaidAmountInput] = useState<number | ''>('');
   const [orderNotes, setOrderNotes] = useState<string>('');
 
-  // Print Modal
+  // Print Modal & Confirmation State
   const [printedOrder, setPrintedOrder] = useState<RetailSaleOrder | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<Omit<RetailSaleOrder, 'id' | 'order_code' | 'created_at'> | null>(null);
 
   // Retail Orders History State
   const [ordersHistory, setOrdersHistory] = useState<RetailSaleOrder[]>(() => StorageService.getRetailOrders());
@@ -296,6 +297,7 @@ export const RetailSalesPage: React.FC = () => {
   };
 
   // Complete POS Order Checkout
+  // Step 1: Prepare order and open Print/Confirm Preview Modal (does NOT finalize yet)
   const handleCheckout = () => {
     if (cartItems.length === 0) {
       showToast('Giỏ hàng chưa có sản phẩm nào!', 'error');
@@ -308,14 +310,15 @@ export const RetailSalesPage: React.FC = () => {
         showToast('Vui lòng nhập tên và số điện thoại khách lẻ!', 'error');
         return;
       }
-      customerObj = StorageService.addCustomer({
+      customerObj = {
+        id: 0,
+        code: 'KH-VANGLAI',
         name: customCustomerName.trim(),
         phone: customCustomerPhone.trim(),
         customer_type: 'individual',
         current_debt: 0,
-      });
-      // Refresh customer list
-      setCustomersList(StorageService.getCustomers());
+        created_at: new Date().toISOString(),
+      };
     } else {
       customerObj = customersList.find((c) => c.id === Number(selectedCustomerId));
       if (!customerObj) {
@@ -350,7 +353,8 @@ export const RetailSalesPage: React.FC = () => {
       fullNotes = fullNotes ? `${fullNotes} | ${tradeNote}` : tradeNote;
     }
 
-    const newOrder = StorageService.createRetailOrder({
+    // Set pending order for review in Modal before completing
+    setPendingOrder({
       customer_id: customerObj.id,
       customer_name: customerObj.name,
       customer_phone: customerObj.phone,
@@ -370,8 +374,31 @@ export const RetailSalesPage: React.FC = () => {
       return_days: Math.max(...cartItems.map((ci) => ci.return_days ?? (settings.default_return_days || 15))),
       items: orderItemsList,
     });
+  };
 
-    showToast(`Thanh toán đơn hàng ${newOrder.order_code} thành công!`, 'success');
+  // Step 2: User clicks "Xác nhận & In hóa đơn" in the preview modal -> NOW finalize & deduct inventory
+  const handleConfirmCompleteOrder = () => {
+    if (!pendingOrder) return;
+
+    let customerId = pendingOrder.customer_id;
+    // If walk-in, save customer record now
+    if (isWalkIn) {
+      const createdCustomer = StorageService.addCustomer({
+        name: pendingOrder.customer_name,
+        phone: pendingOrder.customer_phone,
+        customer_type: 'individual',
+        current_debt: 0,
+      });
+      customerId = createdCustomer.id;
+      setCustomersList(StorageService.getCustomers());
+    }
+
+    const finalizedOrder = StorageService.createRetailOrder({
+      ...pendingOrder,
+      customer_id: customerId,
+    });
+
+    showToast(`Đã xác nhận & hoàn thành đơn hàng ${finalizedOrder.order_code}!`, 'success');
 
     // Reset Form
     setCartItems([]);
@@ -387,8 +414,8 @@ export const RetailSalesPage: React.FC = () => {
     setParts(StorageService.getParts());
     setOrdersHistory(StorageService.getRetailOrders());
 
-    // Print Receipt
-    setPrintedOrder(newOrder);
+    // Close preview modal
+    setPendingOrder(null);
   };
 
   // Filtered History
@@ -990,7 +1017,7 @@ export const RetailSalesPage: React.FC = () => {
               }`}
             >
               <Receipt className="w-5 h-5" />
-              <span>Thanh toán & In Hóa Đơn Hàng</span>
+              <span>Xem trước hóa đơn & Thanh toán</span>
             </button>
           </div>
         </div>
@@ -1149,7 +1176,23 @@ export const RetailSalesPage: React.FC = () => {
         />
       )}
 
-      {/* Print Invoice Modal */}
+      {/* Preview & Confirmation Modal before final completion */}
+      {pendingOrder && (
+        <RetailSalePrintModal
+          order={{
+            ...pendingOrder,
+            id: 0,
+            order_code: 'HD-XEMTRUOC',
+            created_at: new Date().toISOString(),
+          }}
+          settings={settings}
+          isPending={true}
+          onClose={() => setPendingOrder(null)}
+          onConfirm={handleConfirmCompleteOrder}
+        />
+      )}
+
+      {/* Print Invoice Modal (History / View completed) */}
       {printedOrder && (
         <RetailSalePrintModal
           order={printedOrder}

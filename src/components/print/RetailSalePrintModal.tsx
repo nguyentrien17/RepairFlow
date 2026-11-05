@@ -7,13 +7,24 @@ interface RetailSalePrintModalProps {
   order: RetailSaleOrder;
   settings: StoreSettings;
   onClose: () => void;
+  isPending?: boolean;
+  onConfirm?: () => void;
 }
 
 export const RetailSalePrintModal: React.FC<RetailSalePrintModalProps> = ({
   order,
   settings,
   onClose,
+  isPending = false,
+  onConfirm,
 }) => {
+  const handlePrintOrConfirm = () => {
+    window.print();
+    if (isPending && onConfirm) {
+      onConfirm();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
@@ -21,19 +32,42 @@ export const RetailSalePrintModal: React.FC<RetailSalePrintModalProps> = ({
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print">
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-indigo-600" />
-            <h3 className="font-bold text-slate-800">Xem trước bản in: HÓA ĐƠN BÁN HÀNG</h3>
+            <div>
+              <h3 className="font-bold text-slate-800">
+                {isPending ? 'Xem trước & Xác nhận đơn bán hàng' : 'Xem trước bản in: HÓA ĐƠN BÁN HÀNG'}
+              </h3>
+              {isPending && (
+                <p className="text-[11px] text-amber-600 font-semibold">
+                  * Vui lòng kiểm tra thông tin. Bấm "Xác nhận & In hóa đơn" để chính thức hoàn tất đơn và trừ kho.
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            {isPending && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg text-sm transition-colors cursor-pointer"
+              >
+                Quay lại chỉnh sửa
+              </button>
+            )}
             <button
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+              onClick={handlePrintOrConfirm}
+              className={`px-4 py-2 text-white font-bold rounded-lg text-sm flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer ${
+                isPending
+                  ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 ring-2 ring-emerald-500/30'
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
             >
               <Printer className="w-4 h-4" />
-              In hóa đơn
+              <span>{isPending ? 'Xác nhận & In hóa đơn' : 'In hóa đơn'}</span>
             </button>
             <button
               onClick={onClose}
               className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 cursor-pointer"
+              title="Đóng cửa sổ"
             >
               <X className="w-5 h-5" />
             </button>
