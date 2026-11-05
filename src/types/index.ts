@@ -359,6 +359,7 @@ export interface StoreSettings {
   bank_account_name: string;
   ticket_prefix: string;
   default_warranty_days: number;
+  default_return_days?: number;
   terms_intake: string;
   terms_warranty: string;
   // Automated Payment & POS Settings
@@ -380,4 +381,53 @@ export interface AuditLog {
   details: string;
   ip_address?: string;
   created_at: string;
+}
+
+export interface RetailSaleOrderItem {
+  id: number;
+  item_type: 'part' | 'device' | 'accessory';
+  part_id?: number;
+  batch_id?: number;
+  batch_code?: string;
+  product_name: string;
+  sku?: string;
+  serial_number?: string;
+  quantity: number;
+  cost_price: number;
+  unit_price: number;
+  subtotal: number;
+  warranty_months: number;
+  return_days?: number;
+}
+
+export interface RetailSaleOrder {
+  id: number;
+  order_code: string;
+  customer_id: number;
+  customer_name: string;
+  customer_phone: string;
+  customer_address?: string;
+  created_by_id: number;
+  created_by_name: string;
+  subtotal_amount: number;
+  discount_amount: number;
+  promotion_code?: string;
+  promotion_id?: number;
+  final_amount: number;
+  paid_amount: number;
+  debt_amount: number;
+  payment_method: PaymentMethod;
+  payment_status: 'Paid' | 'Partial' | 'Unpaid' | 'Refunded' | 'Partially_Refunded';
+  order_status?: 'Completed' | 'Refunded' | 'Partially_Refunded';
+  refund_amount?: number;
+  refund_reason?: string;
+  refunded_at?: string;
+  refunded_by_name?: string;
+  return_to_stock?: boolean;
+  transaction_ref?: string;
+  notes?: string;
+  warranty_months: number;
+  return_days?: number;
+  created_at: string;
+  items: RetailSaleOrderItem[];
 }

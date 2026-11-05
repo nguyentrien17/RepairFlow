@@ -98,6 +98,21 @@ export const SettingsPage: React.FC = () => {
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono uppercase"
               />
             </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Thời hạn bảo hành đổi trả mặc định (ngày) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                required
+                value={settings.default_return_days ?? 15}
+                onChange={(e) => setSettings({ ...settings, default_return_days: Math.max(0, parseInt(e.target.value) || 0) })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono text-indigo-700"
+              />
+            </div>
           </div>
         </div>
 

@@ -21,6 +21,7 @@ import { AuditLogPage } from './pages/audit/AuditLogPage';
 import { PublicLookupPortal } from './pages/lookup/PublicLookupPortal';
 import { LoginPage } from './pages/auth/LoginPage';
 import { ProfilePage } from './pages/auth/ProfilePage';
+import { RetailSalesPage } from './pages/sales/RetailSalesPage';
 import { useAuth } from './contexts/AuthContext';
 import { StorageService } from './services/mockStorage';
 
@@ -130,6 +131,8 @@ function MainApp() {
               }}
             />
           )}
+
+          {currentTab === 'sales' && <RetailSalesPage />}
 
           {currentTab === 'tickets' && (
             selectedTicketId ? (

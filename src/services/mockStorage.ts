@@ -22,6 +22,8 @@ import {
   RepairStatus,
   Promotion,
   InventoryBatch,
+  RetailSaleOrder,
+  RetailSaleOrderItem,
 } from '../types';
 
 const STORAGE_KEY_PREFIX = 'repairflow_';
@@ -97,6 +99,7 @@ export const INITIAL_SETTINGS: StoreSettings = {
   bank_account_name: 'CTY TNHH CONG NGHE REPAIRFLOW',
   ticket_prefix: 'SC',
   default_warranty_days: 90,
+  default_return_days: 15,
   terms_intake:
     '1. Quý khách vui lòng sao lưu dữ liệu cá nhân trước khi bàn giao. Cửa hàng không chịu trách nhiệm về dữ liệu phần mềm.\n2. Thiết bị sau khi thông báo hoàn tất, quý khách vui lòng đến nhận trong vòng 30 ngày.\n3. Vui lòng giữ phiếu tiếp nhận để đối chiếu khi nhận máy.',
   terms_warranty:
@@ -938,6 +941,45 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   },
 ];
 
+export const INITIAL_RETAIL_ORDERS: RetailSaleOrder[] = [
+  {
+    id: 1,
+    order_code: 'HD-20261103-0001',
+    customer_id: 2,
+    customer_name: 'Anh Hoàng Tuấn Minh',
+    customer_phone: '0918234567',
+    created_by_id: 3,
+    created_by_name: 'Trần Thị Thu Hà (Lễ tân)',
+    subtotal_amount: 1150000,
+    discount_amount: 50000,
+    promotion_code: 'KHACHMOI30K',
+    final_amount: 1100000,
+    paid_amount: 1100000,
+    debt_amount: 0,
+    payment_method: 'Bank_Transfer',
+    payment_status: 'Paid',
+    notes: 'Bán lẻ pin iPhone 14 Pro Max kèm phụ kiện sạc',
+    warranty_months: 6,
+    created_at: '2026-11-03T11:20:00Z',
+    items: [
+      {
+        id: 1,
+        item_type: 'part',
+        part_id: 1,
+        batch_id: 1,
+        batch_code: 'LOT-20261102-001',
+        product_name: 'Pin chuẩn dung lượng cao iPhone 14 Pro Max',
+        sku: 'LK-PIN-IP14PM',
+        quantity: 1,
+        cost_price: 650000,
+        unit_price: 1150000,
+        subtotal: 1150000,
+        warranty_months: 6,
+      },
+    ],
+  },
+];
+
 // Helper functions for persistent LocalStorage
 function loadOrInit<T>(key: string, initialData: T): T {
   try {
@@ -1052,6 +1094,14 @@ export const StorageService = {
     save('customers', list);
     this.addAuditLog('CREATE_CUSTOMER', 'customers', code, `Thêm khách hàng mới: ${c.name}`);
     return newCustomer;
+  },
+  updateCustomer(id: number, data: Partial<Customer>): Customer | undefined {
+    const list = this.getCustomers();
+    const idx = list.findIndex((c) => c.id === id);
+    if (idx === -1) return undefined;
+    list[idx] = { ...list[idx], ...data };
+    save('customers', list);
+    return list[idx];
   },
 
   // Devices
@@ -1862,5 +1912,159 @@ export const StorageService = {
       created_at: new Date().toISOString(),
     });
     save('audit_logs', all.slice(0, 200)); // Keep last 200 logs
+  },
+
+  // Retail Sales Orders (Bán hàng & Bán thiết bị tại quầy)
+  getRetailOrders(): RetailSaleOrder[] {
+    return loadOrInit('retail_orders', INITIAL_RETAIL_ORDERS);
+  },
+  getRetailOrderById(id: number): RetailSaleOrder | undefined {
+    return this.getRetailOrders().find((o) => o.id === id);
+  },
+  createRetailOrder(orderData: Omit<RetailSaleOrder, 'id' | 'order_code' | 'created_at'>): RetailSaleOrder {
+    const orders = this.getRetailOrders();
+    const newId = orders.length > 0 ? Math.max(...orders.map((o) => o.id)) + 1 : 1;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const seq = String(orders.length + 1).padStart(4, '0');
+    const orderCode = `HD-${dateStr}-${seq}`;
+
+    const newOrder: RetailSaleOrder = {
+      ...orderData,
+      id: newId,
+      order_code: orderCode,
+      created_at: now.toISOString(),
+    };
+
+    // Auto deduct inventory stock for sold parts/batches
+    newOrder.items.forEach((item) => {
+      if (item.batch_id) {
+        const batches = this.getBatches();
+        const targetBatch = batches.find((b) => b.id === item.batch_id);
+        if (targetBatch && targetBatch.remaining_quantity >= item.quantity) {
+          this.updateInventoryBatch(targetBatch.id, {
+            remaining_quantity: targetBatch.remaining_quantity - item.quantity,
+          });
+        }
+      } else if (item.part_id) {
+        const parts = this.getParts();
+        const part = parts.find((p) => p.id === item.part_id);
+        if (part) {
+          this.updatePart(part.id, {
+            stock_quantity: Math.max(0, part.stock_quantity - item.quantity),
+          });
+        }
+      }
+    });
+
+    // Handle customer debt if unpaid or partial
+    if (newOrder.debt_amount > 0 && newOrder.customer_id) {
+      const customers = this.getCustomers();
+      const customer = customers.find((c) => c.id === newOrder.customer_id);
+      if (customer) {
+        this.updateCustomer(customer.id, {
+          current_debt: customer.current_debt + newOrder.debt_amount,
+        });
+      }
+    }
+
+    // Record promotion usage if voucher used
+    if (newOrder.promotion_code) {
+      this.recordPromotionUsage(newOrder.promotion_code);
+    }
+
+    orders.unshift(newOrder);
+    save('retail_orders', orders);
+
+    this.addAuditLog(
+      'Bán lẻ tại quầy',
+      'RetailSaleOrder',
+      orderCode,
+      `Bán lẻ cho khách ${newOrder.customer_name} - Trị giá: ${newOrder.final_amount.toLocaleString('vi-VN')} đ - TT: ${newOrder.payment_method}`,
+      newOrder.created_by_name
+    );
+
+    return newOrder;
+  },
+
+  refundRetailOrder(
+    orderId: number,
+    options: {
+      refundReason: string;
+      refundAmount: number;
+      returnStockToInventory: boolean;
+      refundedByName: string;
+    }
+  ): RetailSaleOrder {
+    const orders = this.getRetailOrders();
+    const idx = orders.findIndex((o) => o.id === orderId);
+    if (idx === -1) throw new Error('Không tìm thấy hóa đơn cần hoàn trả');
+
+    const targetOrder = orders[idx];
+    if (targetOrder.order_status === 'Refunded') {
+      throw new Error('Hóa đơn này đã được hoàn trả trước đó');
+    }
+
+    const maxRefundAllowed = Math.max(0, targetOrder.paid_amount || targetOrder.final_amount);
+    if (options.refundAmount > maxRefundAllowed) {
+      throw new Error(
+        `Số tiền hoàn trả (${options.refundAmount.toLocaleString('vi-VN')} đ) không được vượt quá mức thực thu tối đa (${maxRefundAllowed.toLocaleString('vi-VN')} đ)!`
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // 1. Revert inventory stock if requested
+    if (options.returnStockToInventory && targetOrder.items) {
+      targetOrder.items.forEach((item) => {
+        if (item.batch_id) {
+          const batches = this.getBatches();
+          const targetBatch = batches.find((b) => b.id === item.batch_id);
+          if (targetBatch) {
+            this.updateInventoryBatch(targetBatch.id, {
+              remaining_quantity: targetBatch.remaining_quantity + item.quantity,
+            });
+          }
+        } else if (item.part_id) {
+          this.updatePartStock(item.part_id, item.quantity);
+        }
+      });
+    }
+
+    // 2. Revert customer debt if any
+    if (targetOrder.debt_amount > 0 && targetOrder.customer_id) {
+      const customers = this.getCustomers();
+      const customer = customers.find((c) => c.id === targetOrder.customer_id);
+      if (customer) {
+        this.updateCustomer(customer.id, {
+          current_debt: Math.max(0, customer.current_debt - targetOrder.debt_amount),
+        });
+      }
+    }
+
+    // 3. Update order object status
+    const updatedOrder: RetailSaleOrder = {
+      ...targetOrder,
+      order_status: 'Refunded',
+      payment_status: 'Refunded',
+      refund_amount: options.refundAmount,
+      refund_reason: options.refundReason,
+      refunded_at: nowIso,
+      refunded_by_name: options.refundedByName,
+      return_to_stock: options.returnStockToInventory,
+    };
+
+    orders[idx] = updatedOrder;
+    save('retail_orders', orders);
+
+    this.addAuditLog(
+      'HOÀN_TRẢ_HÓA_ĐƠN',
+      'RetailSaleOrder',
+      targetOrder.order_code,
+      `Hoàn trả hóa đơn ${targetOrder.order_code} - Số tiền hoàn: ${options.refundAmount.toLocaleString('vi-VN')} đ - Lý do: ${options.refundReason} - Cộng hoàn kho: ${options.returnStockToInventory ? 'Có' : 'Không'}`,
+      options.refundedByName
+    );
+
+    return updatedOrder;
   },
 };

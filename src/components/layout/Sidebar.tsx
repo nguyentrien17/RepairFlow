@@ -15,6 +15,7 @@ import {
   Settings,
   SearchCode,
   BadgePercent,
+  Store,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -23,6 +24,7 @@ export type TabType =
   | 'tickets'
   | 'kanban'
   | 'intake'
+  | 'sales'
   | 'customers'
   | 'devices'
   | 'inventory'
@@ -57,6 +59,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       label: 'Tiếp nhận mới',
       icon: PlusCircle,
       highlight: true,
+      roles: ['admin', 'manager', 'receptionist'],
+    },
+    {
+      id: 'sales',
+      label: 'Bán hàng tại quầy',
+      icon: Store,
       roles: ['admin', 'manager', 'receptionist'],
     },
     {

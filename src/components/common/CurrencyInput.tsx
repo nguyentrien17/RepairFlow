@@ -15,6 +15,7 @@ export interface CurrencyInputProps {
   name?: string;
   suffix?: string;
   showInWords?: boolean;
+  clampToMax?: boolean;
   quickMaxButtonLabel?: string;
   quickPresets?: number[];
   autoFocus?: boolean;
@@ -35,6 +36,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   name,
   suffix = 'đ',
   showInWords = true,
+  clampToMax = false,
   quickMaxButtonLabel,
   quickPresets,
   autoFocus = false,
@@ -52,13 +54,17 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
     if (value === '' || value === undefined || value === null) {
       setDisplayValue('');
     } else {
-      const formatted = formatNumberDots(value);
+      let activeVal = value;
+      if (clampToMax && max !== undefined && activeVal > max) {
+        activeVal = max;
+      }
+      const formatted = formatNumberDots(activeVal);
       setDisplayValue(formatted);
     }
-  }, [value]);
+  }, [value, clampToMax, max]);
 
   const numValue = typeof value === 'number' ? value : 0;
-  const isOverMax = max !== undefined && numValue > max;
+  const isOverMax = !clampToMax && max !== undefined && numValue > max;
   const isUnderMin = min !== undefined && numValue < min;
   const hasError = isOverMax || isUnderMin || Boolean(customError);
 
@@ -73,7 +79,11 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
       return;
     }
 
-    const parsedNum = Math.max(0, parseInt(digitsOnly, 10));
+    let parsedNum = Math.max(0, parseInt(digitsOnly, 10));
+    if (clampToMax && max !== undefined && parsedNum > max) {
+      parsedNum = max;
+    }
+
     setDisplayValue(formatNumberDots(parsedNum));
     onChange(parsedNum);
   };
