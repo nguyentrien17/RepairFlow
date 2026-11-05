@@ -131,7 +131,9 @@ export const CustomerListPage: React.FC = () => {
             <h3 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">Thêm khách hàng mới</h3>
             <form onSubmit={handleCreateCustomer} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Họ tên / Tên Doanh nghiệp *</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Họ tên / Tên Doanh nghiệp <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -141,7 +143,9 @@ export const CustomerListPage: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Số điện thoại *</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Số điện thoại <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="tel"
                   required

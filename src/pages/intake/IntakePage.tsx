@@ -178,18 +178,40 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
   }, [customers]);
 
   const categoryOptions: SearchableOption[] = useMemo(() => {
-    return categories.map((cat) => ({
+    const list: SearchableOption[] = categories.map((cat) => ({
       value: cat.id,
       label: cat.name,
       sublabel: `Mã: ${cat.code}`,
     }));
+    const hasOther = list.some(
+      (item) => String(item.value) === 'other' || item.label.toLowerCase().includes('khác')
+    );
+    if (!hasOther) {
+      list.push({
+        value: 'other',
+        label: 'Khác (Tự nhập loại thiết bị mới)',
+        sublabel: 'Tự nhập loại thiết bị tùy chỉnh',
+      });
+    }
+    return list;
   }, [categories]);
 
   const brandOptions: SearchableOption[] = useMemo(() => {
-    return brands.map((b) => ({
+    const list: SearchableOption[] = brands.map((b) => ({
       value: b.id,
       label: b.name,
     }));
+    const hasOther = list.some(
+      (item) => String(item.value) === 'other' || item.label.toLowerCase().includes('khác')
+    );
+    if (!hasOther) {
+      list.push({
+        value: 'other',
+        label: 'Khác (Tự nhập tên hãng sản xuất)',
+        sublabel: 'Tự nhập hãng sản xuất tùy chỉnh',
+      });
+    }
+    return list;
   }, [brands]);
 
   const techOptions: SearchableOption[] = useMemo(() => {
@@ -218,8 +240,10 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
   const [taxNumber, setTaxNumber] = useState('');
 
   // Device state
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number>(categories[0]?.id || 1);
-  const [selectedBrandId, setSelectedBrandId] = useState<number>(brands[0]?.id || 1);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | string>(categories[0]?.id || 1);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [selectedBrandId, setSelectedBrandId] = useState<number | string>(brands[0]?.id || 1);
+  const [customBrandName, setCustomBrandName] = useState('');
   const [modelName, setModelName] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [color, setColor] = useState('');
@@ -260,11 +284,35 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
   const [createdTicket, setCreatedTicket] = useState<RepairTicket | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
+  // Custom Category & Brand Check
+  const isCustomCategory = useMemo(() => {
+    if (selectedCategoryId === 'other') return true;
+    if (typeof selectedCategoryId === 'number') {
+      const cat = categories.find((c) => c.id === selectedCategoryId);
+      if (cat && (cat.code === 'other' || cat.name.toLowerCase().includes('khác'))) {
+        return true;
+      }
+    }
+    return false;
+  }, [selectedCategoryId, categories]);
+
+  const isCustomBrand = useMemo(() => {
+    if (selectedBrandId === 'other') return true;
+    if (typeof selectedBrandId === 'number') {
+      const b = brands.find((brand) => brand.id === selectedBrandId);
+      if (b && b.name.toLowerCase().includes('khác')) {
+        return true;
+      }
+    }
+    return false;
+  }, [selectedBrandId, brands]);
+
   // Selected Category Code
   const currentCategoryCode = useMemo(() => {
-    const cat = categories.find((c) => c.id === selectedCategoryId);
+    if (isCustomCategory) return 'other';
+    const cat = categories.find((c) => c.id === Number(selectedCategoryId));
     return cat ? cat.code.toLowerCase() : 'laptop';
-  }, [categories, selectedCategoryId]);
+  }, [categories, selectedCategoryId, isCustomCategory]);
 
   // Suggested condition tags for current category
   const suggestedConditions = useMemo(() => {
@@ -292,6 +340,16 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isCustomCategory && !customCategoryName.trim()) {
+      showToast('Vui lòng nhập tên loại thiết bị khác!', 'error');
+      return;
+    }
+
+    if (isCustomBrand && !customBrandName.trim()) {
+      showToast('Vui lòng nhập tên hãng sản xuất khác!', 'error');
+      return;
+    }
 
     if (!defectDesc.trim()) {
       showToast('Vui lòng nhập mô tả sự cố từ khách hàng!', 'error');
@@ -328,18 +386,26 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
       finalCustomer = found;
     }
 
-    const categoryObj = categories.find((c) => c.id === selectedCategoryId);
-    const brandObj = brands.find((b) => b.id === selectedBrandId);
+    const categoryObj = typeof selectedCategoryId === 'number' ? categories.find((c) => c.id === selectedCategoryId) : null;
+    const brandObj = typeof selectedBrandId === 'number' ? brands.find((b) => b.id === selectedBrandId) : null;
+
+    const finalCategoryName = isCustomCategory
+      ? (customCategoryName.trim() || 'Thiết bị khác')
+      : (categoryObj?.name || 'Thiết bị');
+
+    const finalBrandName = isCustomBrand
+      ? (customBrandName.trim() || 'Hãng khác')
+      : (brandObj?.name || 'Hãng');
 
     // Create device
     const device = StorageService.addDevice({
       customer_id: finalCustomer.id,
       customer_name: finalCustomer.name,
       customer_phone: finalCustomer.phone,
-      category_id: selectedCategoryId,
-      category_name: categoryObj?.name || 'Thiết bị',
-      brand_id: selectedBrandId,
-      brand_name: brandObj?.name || 'Hãng',
+      category_id: typeof selectedCategoryId === 'number' ? selectedCategoryId : 7,
+      category_name: finalCategoryName,
+      brand_id: typeof selectedBrandId === 'number' ? selectedBrandId : 999,
+      brand_name: finalBrandName,
       model_name: modelName.trim(),
       serial_number: serialNumber.trim() || undefined,
       color: color.trim() || undefined,
@@ -373,8 +439,8 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
       customer_address: finalCustomer.address,
       device_id: device.id,
       device_model: device.model_name,
-      device_category: categoryObj?.name || 'Thiết bị',
-      device_brand: brandObj?.name || 'Hãng',
+      device_category: finalCategoryName,
+      device_brand: finalBrandName,
       device_serial: device.serial_number,
       device_color: device.color,
       created_by_id: currentUser?.id || 1,
@@ -493,7 +559,7 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Họ tên / Tên Doanh nghiệp *
+                  Họ tên / Tên Doanh nghiệp <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -506,7 +572,7 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Số điện thoại liên hệ *
+                  Số điện thoại liên hệ <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="tel"
@@ -588,11 +654,30 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
                 required
                 options={categoryOptions}
                 value={selectedCategoryId}
-                onChange={(val) => setSelectedCategoryId(Number(val))}
+                onChange={(val) => {
+                  setSelectedCategoryId(val === 'other' ? 'other' : (isNaN(Number(val)) ? val : Number(val)));
+                }}
                 placeholder="-- Chọn loại máy --"
                 searchPlaceholder="Tìm laptop, điện thoại, PC..."
               />
             </div>
+
+            {isCustomCategory && (
+              <div className="animate-fadeIn">
+                <label className="block text-xs font-semibold text-indigo-900 mb-1 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  Nhập loại thiết bị khác <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Tai nghe Bluetooth, Máy chiếu, Loa Marshall, PS5..."
+                  value={customCategoryName}
+                  onChange={(e) => setCustomCategoryName(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-indigo-50/60 border border-indigo-300 rounded-xl text-sm font-medium focus:bg-white focus:border-indigo-600 focus:outline-hidden"
+                />
+              </div>
+            )}
 
             <div>
               <SearchableSelect
@@ -600,15 +685,34 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
                 required
                 options={brandOptions}
                 value={selectedBrandId}
-                onChange={(val) => setSelectedBrandId(Number(val))}
+                onChange={(val) => {
+                  setSelectedBrandId(val === 'other' ? 'other' : (isNaN(Number(val)) ? val : Number(val)));
+                }}
                 placeholder="-- Chọn hãng --"
                 searchPlaceholder="Tìm Dell, Apple, Asus, HP..."
               />
             </div>
 
+            {isCustomBrand && (
+              <div className="animate-fadeIn">
+                <label className="block text-xs font-semibold text-indigo-900 mb-1 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  Nhập tên hãng sản xuất khác <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Sony, Xiaomi, Dyson, Nintendo, Sharp..."
+                  value={customBrandName}
+                  onChange={(e) => setCustomBrandName(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-indigo-50/60 border border-indigo-300 rounded-xl text-sm font-medium focus:bg-white focus:border-indigo-600 focus:outline-hidden"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tên dòng máy (Model) *
+                Tên dòng máy (Model) <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -684,7 +788,7 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-bold text-slate-800">
-                  Lỗi khách hàng mô tả (Sự cố cần sửa chữa) *
+                  Lỗi khách hàng mô tả (Sự cố cần sửa chữa) <span className="text-rose-500">*</span>
                 </label>
                 <span className="text-[10px] text-slate-500 italic">Bắt buộc nhập chính xác</span>
               </div>

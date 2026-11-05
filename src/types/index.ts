@@ -143,6 +143,8 @@ export interface RepairQuoteItem {
   quote_id: number;
   item_type: 'labor' | 'part';
   part_id?: number;
+  batch_id?: number;
+  batch_code?: string;
   name: string;
   quantity: number;
   unit_price: number;
@@ -213,6 +215,8 @@ export interface Part {
   name: string;
   category_id: number;
   category_name: string;
+  supplier_id?: number;
+  supplier_name?: string;
   compatible_models?: string;
   cost_price: number;
   selling_price: number;
@@ -235,6 +239,25 @@ export interface Supplier {
   email?: string;
   address?: string;
   is_active: boolean;
+}
+
+export interface InventoryBatch {
+  id: number;
+  batch_code: string;
+  part_id: number;
+  part_name: string;
+  sku: string;
+  supplier_id?: number;
+  supplier_name?: string;
+  import_quantity: number;
+  remaining_quantity: number;
+  cost_price: number;
+  selling_price: number;
+  import_date: string;
+  expiry_date?: string;
+  created_by_name: string;
+  notes?: string;
+  created_at: string;
 }
 
 export interface InventoryTransactionItem {
@@ -263,6 +286,8 @@ export interface RepairPartUsage {
   id: number;
   ticket_id: number;
   part_id: number;
+  batch_id?: number;
+  batch_code?: string;
   part_name: string;
   sku: string;
   quantity: number;

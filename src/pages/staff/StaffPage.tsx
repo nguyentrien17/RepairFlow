@@ -156,7 +156,9 @@ export const StaffPage: React.FC = () => {
             <h3 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">Thêm nhân viên mới</h3>
             <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Họ và tên *</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Họ và tên <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -168,7 +170,9 @@ export const StaffPage: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tên đăng nhập *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Tên đăng nhập <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     required
@@ -179,7 +183,9 @@ export const StaffPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Vai trò *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Vai trò <span className="text-rose-500">*</span>
+                  </label>
                   <select
                     value={role}
                     onChange={(e) => setRole(e.target.value as UserRole)}
@@ -192,7 +198,9 @@ export const StaffPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Email *</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Email <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="email"
                   required

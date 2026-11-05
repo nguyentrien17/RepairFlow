@@ -21,6 +21,7 @@ import {
   AuditLog,
   RepairStatus,
   Promotion,
+  InventoryBatch,
 } from '../types';
 
 const STORAGE_KEY_PREFIX = 'repairflow_';
@@ -225,6 +226,8 @@ export const INITIAL_PARTS: Part[] = [
     name: 'Pin chuẩn dung lượng cao iPhone 14 Pro Max (4323mAh)',
     category_id: 1,
     category_name: 'Pin thiết bị',
+    supplier_id: 2,
+    supplier_name: 'Tổng Kho Phụ Kiện & Màn Hình Apple Việt Mỹ',
     compatible_models: 'Apple iPhone 14 Pro Max (A2894, A2651)',
     cost_price: 650000,
     selling_price: 1150000,
@@ -239,6 +242,8 @@ export const INITIAL_PARTS: Part[] = [
     name: 'Màn hình IPS 15.6 inch FHD+ (1920x1200) Dell XPS 9500 / 9510',
     category_id: 2,
     category_name: 'Màn hình hiển thị',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
     compatible_models: 'Dell XPS 15 9500, XPS 9510, Precision 5550',
     cost_price: 2400000,
     selling_price: 3600000,
@@ -253,6 +258,8 @@ export const INITIAL_PARTS: Part[] = [
     name: 'Ổ cứng SSD Samsung 980 1TB NVMe PCIe Gen 3x4',
     category_id: 3,
     category_name: 'Ổ cứng & Lưu trữ',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
     compatible_models: 'Hỗ trợ tất cả Laptop & PC có khe M.2 NVMe',
     cost_price: 1550000,
     selling_price: 2200000,
@@ -267,6 +274,8 @@ export const INITIAL_PARTS: Part[] = [
     name: 'RAM Laptop Kingston 16GB DDR4 3200MHz',
     category_id: 4,
     category_name: 'Bộ nhớ RAM',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
     compatible_models: 'Laptop DDR4 SODIMM',
     cost_price: 720000,
     selling_price: 1100000,
@@ -281,6 +290,8 @@ export const INITIAL_PARTS: Part[] = [
     name: 'Keo tản nhiệt gốm cao cấp Arctic MX-4 (Tuýp 4g)',
     category_id: 5,
     category_name: 'Vật tư bảo dưỡng',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
     compatible_models: 'CPU / GPU mọi thiết bị',
     cost_price: 90000,
     selling_price: 180000,
@@ -309,6 +320,132 @@ export const INITIAL_SUPPLIERS: Supplier[] = [
     email: 'support@vietmyapple.com',
     address: '42 Trần Quang Khải, P. Tân Định, Q.1, TP.HCM',
     is_active: true,
+  },
+  {
+    id: 3,
+    code: 'NCC-003',
+    name: 'Công ty TNHH Thương Mại Điện Tử Minh Hoàng',
+    phone: '0912.345.678',
+    email: 'contact@minhhoangelec.vn',
+    address: '88 Nguyễn Trãi, P. Ben Thanh, Q.1, TP.HCM',
+    is_active: true,
+  },
+];
+
+export const INITIAL_PART_USAGES: RepairPartUsage[] = [
+  {
+    id: 1,
+    ticket_id: 1,
+    part_id: 5,
+    part_name: 'Keo tản nhiệt gốm cao cấp Arctic MX-4 (Tuýp 4g)',
+    sku: 'LK-KEO-MX4-4G',
+    quantity: 1,
+    cost_price: 90000,
+    selling_price: 180000,
+    status: 'Used',
+    technician_name: 'Lê Hoàng Nam (KTV Trưởng)',
+    created_at: '2026-11-02T09:30:00Z',
+  },
+  {
+    id: 2,
+    ticket_id: 2,
+    part_id: 1,
+    part_name: 'Pin chuẩn dung lượng cao iPhone 14 Pro Max (4323mAh)',
+    sku: 'LK-PIN-IP14PM',
+    quantity: 1,
+    cost_price: 650000,
+    selling_price: 1150000,
+    status: 'Used',
+    technician_name: 'Lê Hoàng Nam (KTV Trưởng)',
+    created_at: '2026-11-02T10:15:00Z',
+  },
+];
+
+export const INITIAL_BATCHES: InventoryBatch[] = [
+  {
+    id: 1,
+    batch_code: 'LOT-20260110-001',
+    part_id: 1,
+    part_name: 'Pin chuẩn dung lượng cao iPhone 14 Pro Max (4323mAh)',
+    sku: 'LK-PIN-IP14PM',
+    supplier_id: 2,
+    supplier_name: 'Tổng Kho Phụ Kiện & Màn Hình Apple Việt Mỹ',
+    import_quantity: 10,
+    remaining_quantity: 8,
+    cost_price: 650000,
+    selling_price: 1150000,
+    import_date: '2026-01-10',
+    created_by_name: 'Nguyễn Triển (Admin)',
+    notes: 'Đợt nhập chính hãng Apple Việt Mỹ - Tháng 01/2026',
+    created_at: '2026-01-10T08:00:00Z',
+  },
+  {
+    id: 2,
+    batch_code: 'LOT-20260112-001',
+    part_id: 2,
+    part_name: 'Màn hình IPS 15.6 inch FHD+ (1920x1200) Dell XPS 9500 / 9510',
+    sku: 'LK-MH-DELL-XPS15',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
+    import_quantity: 3,
+    remaining_quantity: 2,
+    cost_price: 2400000,
+    selling_price: 3600000,
+    import_date: '2026-01-12',
+    created_by_name: 'Nguyễn Triển (Admin)',
+    notes: 'Lô màn hình linh kiện Dell chuẩn A+',
+    created_at: '2026-01-12T08:00:00Z',
+  },
+  {
+    id: 3,
+    batch_code: 'LOT-20260115-001',
+    part_id: 3,
+    part_name: 'Ổ cứng SSD Samsung 980 1TB NVMe PCIe Gen 3x4',
+    sku: 'LK-SSD-NVME-1TB',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
+    import_quantity: 15,
+    remaining_quantity: 12,
+    cost_price: 1550000,
+    selling_price: 2200000,
+    import_date: '2026-01-15',
+    created_by_name: 'Nguyễn Văn Quản (Quản lý)',
+    notes: 'Lô SSD Samsung phân phối chính ngạch',
+    created_at: '2026-01-15T08:00:00Z',
+  },
+  {
+    id: 4,
+    batch_code: 'LOT-20260115-002',
+    part_id: 4,
+    part_name: 'RAM Laptop Kingston 16GB DDR4 3200MHz',
+    sku: 'LK-RAM-DDR4-16GB',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
+    import_quantity: 20,
+    remaining_quantity: 15,
+    cost_price: 720000,
+    selling_price: 1100000,
+    import_date: '2026-01-15',
+    created_by_name: 'Nguyễn Văn Quản (Quản lý)',
+    notes: 'Lô RAM DDR4 chính hãng Vĩnh Xuân',
+    created_at: '2026-01-15T08:00:00Z',
+  },
+  {
+    id: 5,
+    batch_code: 'LOT-20260120-001',
+    part_id: 5,
+    part_name: 'Keo tản nhiệt gốm cao cấp Arctic MX-4 (Tuýp 4g)',
+    sku: 'LK-KEO-MX4-4G',
+    supplier_id: 1,
+    supplier_name: 'Công ty TNHH Phân Phối Linh Kiện Công Nghệ Sài Gòn',
+    import_quantity: 30,
+    remaining_quantity: 25,
+    cost_price: 90000,
+    selling_price: 180000,
+    import_date: '2026-01-20',
+    created_by_name: 'Lê Hoàng Nam (KTV Trưởng)',
+    notes: 'Lô keo tản nhiệt phục vụ bảo dưỡng định kỳ',
+    created_at: '2026-01-20T08:00:00Z',
   },
 ];
 
@@ -857,6 +994,7 @@ export const StorageService = {
     save('devices', INITIAL_DEVICES);
     save('parts', INITIAL_PARTS);
     save('suppliers', INITIAL_SUPPLIERS);
+    save('part_usages', INITIAL_PART_USAGES);
     save('tickets', INITIAL_TICKETS);
     save('histories', INITIAL_HISTORIES);
     save('diagnostics', INITIAL_DIAGNOSTICS);
@@ -865,6 +1003,8 @@ export const StorageService = {
     save('payments', INITIAL_PAYMENTS);
     save('warranties', INITIAL_WARRANTIES);
     save('audit_logs', INITIAL_AUDIT_LOGS);
+    save('promotions', INITIAL_PROMOTIONS);
+    save('part_batches', INITIAL_BATCHES);
   },
 
   // Settings
@@ -1121,7 +1261,25 @@ export const StorageService = {
     const newPart: Part = { ...p, id: newId, created_at: new Date().toISOString() };
     list.unshift(newPart);
     save('parts', list);
+    this.addAuditLog('CREATE_PART', 'parts', p.sku, `Thêm linh kiện mới: ${p.name} (SL: ${p.stock_quantity})`);
     return newPart;
+  },
+  updatePart(id: number, updates: Partial<Part>): Part {
+    const list = this.getParts();
+    const idx = list.findIndex((p) => p.id === id);
+    if (idx === -1) throw new Error('Không tìm thấy linh kiện');
+    
+    // If supplier is updated, fill supplier_name if supplier_id changed
+    if (updates.supplier_id && !updates.supplier_name) {
+      const supp = this.getSuppliers().find((s) => s.id === updates.supplier_id);
+      if (supp) updates.supplier_name = supp.name;
+    }
+
+    const updated: Part = { ...list[idx], ...updates };
+    list[idx] = updated;
+    save('parts', list);
+    this.addAuditLog('UPDATE_PART', 'parts', updated.sku, `Cập nhật thông tin linh kiện: ${updated.name}`);
+    return updated;
   },
   updatePartStock(partId: number, delta: number): void {
     const list = this.getParts();
@@ -1130,6 +1288,275 @@ export const StorageService = {
       list[idx].stock_quantity = Math.max(0, list[idx].stock_quantity + delta);
       save('parts', list);
     }
+  },
+
+  // Suppliers
+  getSuppliers(): Supplier[] {
+    return loadOrInit('suppliers', INITIAL_SUPPLIERS);
+  },
+  addSupplier(data: Omit<Supplier, 'id' | 'code'>): Supplier {
+    const list = this.getSuppliers();
+    const newId = list.length > 0 ? Math.max(...list.map((i) => i.id)) + 1 : 1;
+    const code = `NCC-${String(newId).padStart(3, '0')}`;
+    const newSupplier: Supplier = {
+      ...data,
+      id: newId,
+      code,
+      is_active: data.is_active ?? true,
+    };
+    list.unshift(newSupplier);
+    save('suppliers', list);
+    this.addAuditLog('CREATE_SUPPLIER', 'suppliers', code, `Thêm nhà cung cấp mới: ${data.name}`);
+    return newSupplier;
+  },
+  updateSupplier(id: number, updates: Partial<Supplier>): Supplier {
+    const list = this.getSuppliers();
+    const idx = list.findIndex((s) => s.id === id);
+    if (idx === -1) throw new Error('Không tìm thấy nhà cung cấp');
+    const updated: Supplier = { ...list[idx], ...updates };
+    list[idx] = updated;
+    save('suppliers', list);
+    this.addAuditLog('UPDATE_SUPPLIER', 'suppliers', updated.code, `Cập nhật thông tin nhà cung cấp: ${updated.name}`);
+    return updated;
+  },
+  deleteSupplier(id: number): boolean {
+    const list = this.getSuppliers();
+    const target = list.find((s) => s.id === id);
+    if (!target) return false;
+    const filtered = list.filter((s) => s.id !== id);
+    save('suppliers', filtered);
+    this.addAuditLog('DELETE_SUPPLIER', 'suppliers', target.code, `Xóa nhà cung cấp: ${target.name}`);
+    return true;
+  },
+
+  // Inventory Batches / Lô đợt nhập kho (UC-15, UC-16)
+  getBatches(partId?: number): InventoryBatch[] {
+    const all = loadOrInit('part_batches', INITIAL_BATCHES);
+    if (partId) return all.filter((b) => b.part_id === partId);
+    return all;
+  },
+  updateBatchRemainingQuantity(batchId: number, delta: number): void {
+    const all = loadOrInit('part_batches', INITIAL_BATCHES);
+    const idx = all.findIndex((b) => b.id === batchId);
+    if (idx !== -1) {
+      all[idx].remaining_quantity = Math.max(0, all[idx].remaining_quantity + delta);
+      save('part_batches', all);
+    }
+  },
+  addInventoryBatch(data: {
+    part_id: number;
+    part_name: string;
+    sku: string;
+    supplier_id?: number;
+    supplier_name?: string;
+    import_quantity: number;
+    cost_price: number;
+    selling_price: number;
+    import_date?: string;
+    expiry_date?: string;
+    created_by_name?: string;
+    notes?: string;
+    custom_batch_code?: string;
+  }): InventoryBatch {
+    const all = loadOrInit('part_batches', INITIAL_BATCHES);
+    const newId = all.length > 0 ? Math.max(...all.map((b) => b.id)) + 1 : 1;
+
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const code = data.custom_batch_code?.trim() || `LOT-${todayStr}-${String(newId).padStart(3, '0')}`;
+
+    const newBatch: InventoryBatch = {
+      id: newId,
+      batch_code: code,
+      part_id: data.part_id,
+      part_name: data.part_name,
+      sku: data.sku,
+      supplier_id: data.supplier_id,
+      supplier_name: data.supplier_name,
+      import_quantity: Number(data.import_quantity),
+      remaining_quantity: Number(data.import_quantity),
+      cost_price: Number(data.cost_price),
+      selling_price: Number(data.selling_price),
+      import_date: data.import_date || new Date().toISOString().slice(0, 10),
+      expiry_date: data.expiry_date,
+      created_by_name: data.created_by_name || 'Hệ thống',
+      notes: data.notes,
+      created_at: new Date().toISOString(),
+    };
+
+    all.unshift(newBatch);
+    save('part_batches', all);
+
+    // Increase total part stock
+    this.updatePartStock(data.part_id, Number(data.import_quantity));
+
+    // Sync part's cost_price / selling_price / supplier if updated in batch
+    this.updatePart(data.part_id, {
+      cost_price: Number(data.cost_price),
+      selling_price: Number(data.selling_price),
+      supplier_id: data.supplier_id,
+      supplier_name: data.supplier_name,
+    });
+
+    this.addAuditLog(
+      'IMPORT_BATCH',
+      'inventory_batches',
+      code,
+      `Nhập kho đợt ${code}: +${data.import_quantity}x ${data.part_name} (Giá vốn: ${data.cost_price.toLocaleString()}đ)`
+    );
+
+    return newBatch;
+  },
+  updateInventoryBatch(batchId: number, updates: Partial<InventoryBatch>): InventoryBatch {
+    const all = loadOrInit('part_batches', INITIAL_BATCHES);
+    const idx = all.findIndex((b) => b.id === batchId);
+    if (idx === -1) throw new Error('Không tìm thấy thông tin đợt nhập kho');
+
+    const oldBatch = all[idx];
+    const updatedBatch: InventoryBatch = {
+      ...oldBatch,
+      ...updates,
+      import_quantity: updates.import_quantity !== undefined ? Number(updates.import_quantity) : oldBatch.import_quantity,
+      remaining_quantity: updates.remaining_quantity !== undefined ? Number(updates.remaining_quantity) : oldBatch.remaining_quantity,
+      cost_price: updates.cost_price !== undefined ? Number(updates.cost_price) : oldBatch.cost_price,
+      selling_price: updates.selling_price !== undefined ? Number(updates.selling_price) : oldBatch.selling_price,
+    };
+
+    if (updates.supplier_id && !updates.supplier_name) {
+      const supp = this.getSuppliers().find((s) => s.id === updates.supplier_id);
+      if (supp) updatedBatch.supplier_name = supp.name;
+    }
+
+    all[idx] = updatedBatch;
+    save('part_batches', all);
+
+    // Sync total stock for part if remaining_quantity changed
+    const allPartBatches = all.filter((b) => b.part_id === updatedBatch.part_id);
+    const totalPartStock = allPartBatches.reduce((acc, b) => acc + b.remaining_quantity, 0);
+    const parts = this.getParts();
+    const pIdx = parts.findIndex((p) => p.id === updatedBatch.part_id);
+    if (pIdx !== -1) {
+      parts[pIdx].stock_quantity = totalPartStock;
+      parts[pIdx].cost_price = updatedBatch.cost_price;
+      parts[pIdx].selling_price = updatedBatch.selling_price;
+      save('parts', parts);
+    }
+
+    this.addAuditLog(
+      'UPDATE_BATCH',
+      'inventory_batches',
+      updatedBatch.batch_code,
+      `Cập nhật đợt nhập kho ${updatedBatch.batch_code}: Tồn kho ${updatedBatch.remaining_quantity} cái, Giá vốn: ${updatedBatch.cost_price.toLocaleString()}đ, Giá bán: ${updatedBatch.selling_price.toLocaleString()}đ`
+    );
+
+    return updatedBatch;
+  },
+  deleteInventoryBatch(batchId: number): boolean {
+    const all = loadOrInit('part_batches', INITIAL_BATCHES);
+    const target = all.find((b) => b.id === batchId);
+    if (!target) return false;
+
+    const filtered = all.filter((b) => b.id !== batchId);
+    save('part_batches', filtered);
+
+    // Recalculate total part stock
+    const remainingPartBatches = filtered.filter((b) => b.part_id === target.part_id);
+    const totalPartStock = remainingPartBatches.reduce((acc, b) => acc + b.remaining_quantity, 0);
+    const parts = this.getParts();
+    const pIdx = parts.findIndex((p) => p.id === target.part_id);
+    if (pIdx !== -1) {
+      parts[pIdx].stock_quantity = totalPartStock;
+      save('parts', parts);
+    }
+
+    this.addAuditLog('DELETE_BATCH', 'inventory_batches', target.batch_code, `Xóa đợt nhập kho ${target.batch_code} của linh kiện ${target.part_name}`);
+    return true;
+  },
+
+  // Repair Part Usages (Xuất & Hoàn trả linh kiện cho phiếu sửa chữa - UC-17)
+  getPartUsages(ticketId?: number): RepairPartUsage[] {
+    const all = loadOrInit('part_usages', INITIAL_PART_USAGES);
+    if (ticketId) return all.filter((u) => u.ticket_id === ticketId);
+    return all;
+  },
+  addPartUsage(usageData: Omit<RepairPartUsage, 'id' | 'created_at' | 'status'>): RepairPartUsage {
+    const all = loadOrInit('part_usages', INITIAL_PART_USAGES);
+    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
+    
+    // Deduct stock quantity
+    const part = this.getParts().find((p) => p.id === usageData.part_id);
+    if (!part) throw new Error('Không tìm thấy thông tin linh kiện');
+    if (part.stock_quantity < usageData.quantity) {
+      throw new Error(`Số lượng tồn kho không đủ (Hiện tại còn: ${part.stock_quantity}, Yêu cầu: ${usageData.quantity})`);
+    }
+
+    if (usageData.batch_id) {
+      const batches = this.getBatches();
+      const batch = batches.find((b) => b.id === usageData.batch_id);
+      if (batch && batch.remaining_quantity < usageData.quantity) {
+        throw new Error(`Số lượng đợt nhập [${batch.batch_code}] không đủ (Còn: ${batch.remaining_quantity}, Yêu cầu: ${usageData.quantity})`);
+      }
+      this.updateBatchRemainingQuantity(usageData.batch_id, -usageData.quantity);
+    }
+
+    this.updatePartStock(part.id, -usageData.quantity);
+
+    const newUsage: RepairPartUsage = {
+      ...usageData,
+      id: newId,
+      status: 'Used',
+      created_at: new Date().toISOString(),
+    };
+
+    all.unshift(newUsage);
+    save('part_usages', all);
+
+    // Audit log
+    const ticket = this.getTicketById(usageData.ticket_id);
+    const ticketCode = ticket ? ticket.ticket_code : `ID #${usageData.ticket_id}`;
+    const batchInfo = usageData.batch_code ? ` [Đợt ${usageData.batch_code}]` : '';
+    this.addAuditLog(
+      'EXPORT_PART_TO_TICKET',
+      'repair_part_usages',
+      ticketCode,
+      `Xuất ${usageData.quantity}x ${usageData.part_name}${batchInfo} (${usageData.selling_price.toLocaleString()}đ/cái) cho phiếu ${ticketCode} bởi ${usageData.technician_name}`
+    );
+
+    return newUsage;
+  },
+  returnPartUsage(usageId: number, technicianName: string): boolean {
+    const all = loadOrInit('part_usages', INITIAL_PART_USAGES);
+    const idx = all.findIndex((u) => u.id === usageId);
+    if (idx === -1) return false;
+
+    const usage = all[idx];
+    if (usage.status === 'Returned') {
+      throw new Error('Linh kiện này đã được hoàn trả lại kho trước đó.');
+    }
+
+    // Restore stock
+    this.updatePartStock(usage.part_id, usage.quantity);
+
+    // Restore batch stock if batch_id is present
+    if (usage.batch_id) {
+      this.updateBatchRemainingQuantity(usage.batch_id, usage.quantity);
+    }
+
+    // Update status to Returned
+    all[idx].status = 'Returned';
+    save('part_usages', all);
+
+    // Audit log
+    const ticket = this.getTicketById(usage.ticket_id);
+    const ticketCode = ticket ? ticket.ticket_code : `ID #${usage.ticket_id}`;
+    const batchInfo = usage.batch_code ? ` [Đợt ${usage.batch_code}]` : '';
+    this.addAuditLog(
+      'RETURN_PART_TO_STOCK',
+      'repair_part_usages',
+      ticketCode,
+      `Hoàn trả kho ${usage.quantity}x ${usage.part_name}${batchInfo} từ phiếu ${ticketCode} bởi ${technicianName}`
+    );
+
+    return true;
   },
 
   // Payments

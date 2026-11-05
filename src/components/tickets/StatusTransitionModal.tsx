@@ -473,7 +473,7 @@ export const StatusTransitionModal: React.FC<StatusTransitionModalProps> = ({
               <div className="p-3.5 bg-slate-100 rounded-xl border border-slate-200 space-y-2.5 text-xs">
                 <div>
                   <label className="block font-bold text-slate-800 mb-1">
-                    Lý do hủy phiếu sửa chữa * (Bắt buộc)
+                    Lý do hủy phiếu sửa chữa <span className="text-rose-500">*</span> (Bắt buộc)
                   </label>
                   <input
                     type="text"
@@ -524,7 +524,7 @@ export const StatusTransitionModal: React.FC<StatusTransitionModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
                 <label className="block text-xs font-bold text-slate-800">
-                  Ghi chú & Nội dung công việc thực hiện * (Tối thiểu 5 ký tự)
+                  Ghi chú & Nội dung công việc thực hiện <span className="text-rose-500">*</span> (Tối thiểu 5 ký tự)
                 </label>
                 <button
                   type="button"

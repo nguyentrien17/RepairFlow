@@ -31,7 +31,9 @@ export const SettingsPage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="md:col-span-2">
-              <label className="block font-semibold text-slate-700 mb-1">Tên cửa hàng / Trung tâm *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Tên cửa hàng / Trung tâm <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
@@ -52,7 +54,9 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Hotline liên hệ *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Hotline liên hệ <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
@@ -63,7 +67,9 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="md:col-span-2">
-              <label className="block font-semibold text-slate-700 mb-1">Địa chỉ cửa hàng *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Địa chỉ cửa hàng <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
@@ -104,7 +110,9 @@ export const SettingsPage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Tên ngân hàng *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Tên ngân hàng <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
@@ -115,7 +123,9 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Số tài khoản nhận tiền *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Số tài khoản nhận tiền <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
@@ -126,7 +136,9 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Tên chủ tài khoản (In hoa không dấu) *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Tên chủ tài khoản (In hoa không dấu) <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
@@ -211,7 +223,9 @@ export const SettingsPage: React.FC = () => {
               <h4 className="font-bold text-slate-700 text-xs mb-2">Liên kết Máy quẹt thẻ SmartPOS tại quầy</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Mã định danh máy POS (Terminal ID) *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Mã định danh máy POS (Terminal ID) <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     placeholder="VD: VNPAY_POS_Q1_01 hoặc MPOS_DEV_09"

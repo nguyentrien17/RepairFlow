@@ -13,6 +13,8 @@ import {
   PaymentMethod,
   PaymentType,
   UserRole,
+  RepairPartUsage,
+  Part,
 } from '../../types';
 import {
   formatVND,
@@ -63,6 +65,10 @@ import {
   Tag,
   BadgePercent,
   Gift,
+  RotateCcw,
+  PackageCheck,
+  Building2,
+  History,
 } from 'lucide-react';
 import { PrintModal } from '../../components/print/PrintTemplates';
 import { decryptPassword } from '../../utils/crypto';
@@ -100,11 +106,26 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
 
   // Quote State (UC-12, UC-13)
   const quotes = StorageService.getQuotes(ticketId);
-  const parts = StorageService.getParts();
-  const [quoteItems, setQuoteItems] = useState<{ type: 'labor' | 'part'; name: string; part_id?: number; qty: number; price: number; warranty: number }[]>([
+  const [parts, setParts] = useState<Part[]>(() => StorageService.getParts());
+  const [partUsages, setPartUsages] = useState<RepairPartUsage[]>(() => StorageService.getPartUsages(ticketId));
+  
+  // Part Usage Export/Return Modals State (UC-17)
+  const [exportingPart, setExportingPart] = useState<Part | null>(null);
+  const [exportModalQty, setExportModalQty] = useState<number>(1);
+  const [exportModalTech, setExportModalTech] = useState<string>(currentUser?.full_name || 'Lê Hoàng Nam (KTV Trưởng)');
+  const [exportModalBatchId, setExportModalBatchId] = useState<number | ''>('');
+  const [returningUsage, setReturningUsage] = useState<RepairPartUsage | null>(null);
+
+  const reloadPartUsages = () => {
+    setPartUsages(StorageService.getPartUsages(ticketId));
+    setParts(StorageService.getParts());
+    reloadTicket();
+  };
+  const [quoteItems, setQuoteItems] = useState<{ type: 'labor' | 'part'; name: string; part_id?: number; batch_id?: number; batch_code?: string; qty: number; price: number; warranty: number }[]>([
     { type: 'labor', name: 'Công sửa chữa & vệ sinh mạch', qty: 1, price: 350000, warranty: 3 },
   ]);
   const [quoteDiscount, setQuoteDiscount] = useState<number>(0);
+  const [quickQuotePartId, setQuickQuotePartId] = useState<number | ''>('');
   const activePromotions = StorageService.getPromotions().filter((p) => p.is_active);
   const [selectedPromoCode, setSelectedPromoCode] = useState<string>('');
   const [customPromoInput, setCustomPromoInput] = useState<string>('');
@@ -190,11 +211,97 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   const [pendingStatus, setPendingStatus] = useState<RepairStatus | null>(null);
   const [isAdminOverride, setIsAdminOverride] = useState(false);
 
-  // Role-Based Status Transitions Context
+  // Role-Based Status Transitions & Permission Context
   const userRole = (currentUser?.role || 'receptionist').toLowerCase() as UserRole;
   const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
   const allowedTransitions = getAllowedTransitions(ticket.status, userRole, isAdminOverride);
   const awaitingNotice = getRoleAwaitingNotice(ticket.status, userRole);
+
+  // Permission flags per tab
+  const canEditDiagnostics = isAdminOrManager || userRole === 'technician' || isAdminOverride;
+  const canManageQuotes = isAdminOrManager || userRole === 'receptionist' || userRole === 'technician' || isAdminOverride;
+  const canExportParts = isAdminOrManager || userRole === 'technician' || isAdminOverride;
+  const canPerformQC = isAdminOrManager || userRole === 'technician' || isAdminOverride;
+  const canProcessPayments = isAdminOrManager || userRole === 'receptionist' || isAdminOverride;
+  const canCompleteDelivery = isAdminOrManager || userRole === 'receptionist' || isAdminOverride;
+
+  // Filter mode state: 'my_role' (default for non-admin) vs 'all'
+  const [showAllTabs, setShowAllTabs] = useState<boolean>(false);
+
+  // Master tab definitions with role badges & access scope
+  const ALL_TABS = React.useMemo(() => [
+    {
+      id: 'overview',
+      label: '1. Tổng quan & Tiếp nhận',
+      icon: FileText,
+      badge: 'Tất cả',
+      badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+      allowedRoles: ['admin', 'manager', 'receptionist', 'technician'],
+    },
+    {
+      id: 'diagnostics',
+      label: '2. Chẩn đoán lỗi',
+      icon: Wrench,
+      badge: 'KTV',
+      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
+      allowedRoles: ['admin', 'manager', 'technician'],
+    },
+    {
+      id: 'quotes',
+      label: '3. Báo giá & Khách duyệt',
+      icon: DollarSign,
+      badge: 'Lễ tân & KTV',
+      badgeColor: 'bg-blue-100 text-blue-800 border-blue-300',
+      allowedRoles: ['admin', 'manager', 'receptionist', 'technician'],
+    },
+    {
+      id: 'parts',
+      label: '4. Linh kiện dùng',
+      icon: Boxes,
+      badge: 'KTV & Kho',
+      badgeColor: 'bg-purple-100 text-purple-800 border-purple-300',
+      allowedRoles: ['admin', 'manager', 'technician'],
+    },
+    {
+      id: 'qc',
+      label: '5. QC Kiểm tra chất lượng',
+      icon: CheckCircle2,
+      badge: 'KTV QC',
+      badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      allowedRoles: ['admin', 'manager', 'technician'],
+    },
+    {
+      id: 'payments',
+      label: '6. Thanh toán & Công nợ',
+      icon: CreditCard,
+      badge: 'Thu ngân',
+      badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      allowedRoles: ['admin', 'manager', 'receptionist'],
+    },
+    {
+      id: 'delivery',
+      label: '7. Bàn giao & Bảo hành',
+      icon: ShieldCheck,
+      badge: 'Lễ tân',
+      badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+      allowedRoles: ['admin', 'manager', 'receptionist'],
+    },
+  ], []);
+
+  // Compute visible tabs based on user role & showAllTabs toggle
+  const visibleTabs = React.useMemo(() => {
+    if (showAllTabs || isAdminOrManager) {
+      return ALL_TABS;
+    }
+    return ALL_TABS.filter((tab) => tab.allowedRoles.includes(userRole));
+  }, [ALL_TABS, showAllTabs, isAdminOrManager, userRole]);
+
+  // Keep active tab safe if activeTab is not in visibleTabs
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0]?.id as any || 'overview');
+    }
+  }, [visibleTabs, activeTab]);
 
   // Searchable Part State for Tab 4
   const [selectedPartId, setSelectedPartId] = useState<number | ''>('');
@@ -392,6 +499,9 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         id: idx + 1,
         quote_id: 0,
         item_type: it.type,
+        part_id: it.part_id,
+        batch_id: it.batch_id,
+        batch_code: it.batch_code,
         name: it.name,
         quantity: it.qty,
         unit_price: it.price,
@@ -835,24 +945,40 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 space-x-1 overflow-x-auto text-xs font-bold">
-        {[
-          { id: 'overview', label: '1. Tổng quan & Tiếp nhận', icon: FileText },
-          { id: 'diagnostics', label: '2. Chẩn đoán lỗi', icon: Wrench },
-          { id: 'quotes', label: '3. Báo giá & Khách duyệt', icon: DollarSign },
-          { id: 'parts', label: '4. Linh kiện dùng', icon: Boxes },
-          { id: 'qc', label: '5. QC Kiểm tra chất lượng', icon: CheckCircle2 },
-          { id: 'payments', label: '6. Thanh toán & Công nợ', icon: CreditCard },
-          { id: 'delivery', label: '7. Bàn giao & Bảo hành', icon: ShieldCheck },
-        ].map((tab) => {
+      {/* Tab Filter & Permission Control Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 bg-slate-100/90 rounded-xl text-xs border border-slate-200/80">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-bold text-slate-700 flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-indigo-600" />
+            Đang truy cập với vai trò: <span className="text-indigo-700 underline font-extrabold">{ROLE_DISPLAY_NAMES[userRole] || userRole}</span>
+          </span>
+          <span className="text-slate-300">|</span>
+          <span className="text-slate-600 text-[11px]">
+            Đang hiển thị <strong className="text-slate-900 font-bold">{visibleTabs.length}/7 tab</strong> {showAllTabs ? '(Đã mở tất cả tab quy trình)' : `(Lọc theo nhiệm vụ ${ROLE_DISPLAY_NAMES[userRole]})`}
+          </span>
+        </div>
+
+        {!isAdminOrManager && (
+          <button
+            type="button"
+            onClick={() => setShowAllTabs(!showAllTabs)}
+            className="px-3 py-1 bg-white hover:bg-slate-200 text-slate-800 font-bold rounded-lg border border-slate-300 text-[11px] shadow-2xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          >
+            {showAllTabs ? '🔒 Chỉ xem tab thuộc vai trò tôi' : '🔓 Hiển thị tất cả 7 tab quy trình'}
+          </button>
+        )}
+      </div>
+
+      {/* Navigation Tabs Bar */}
+      <div className="flex border-b border-slate-200 space-x-1 overflow-x-auto text-xs font-bold pt-1">
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 py-3 px-4 rounded-t-xl transition-all whitespace-nowrap border-b-2 ${
+              className={`flex items-center gap-1.5 py-3 px-3.5 rounded-t-xl transition-all whitespace-nowrap border-b-2 ${
                 isActive
                   ? 'border-indigo-600 text-indigo-700 bg-white shadow-xs'
                   : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
@@ -860,6 +986,9 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             >
               <Icon className="w-4 h-4" />
               <span>{tab.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${tab.badgeColor}`}>
+                {tab.badge}
+              </span>
             </button>
           );
         })}
@@ -1067,12 +1196,33 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
           )}
 
-          <form onSubmit={handleSaveDiagnostic} className="p-4 bg-indigo-50/40 rounded-xl border border-indigo-100 space-y-4">
+          {!canEditDiagnostics && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between text-amber-900 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Giới hạn quyền vai trò:</strong> Chức năng chẩn đoán hỏng hóc & giải pháp kỹ thuật do <strong>Kỹ thuật viên (KTV)</strong> hoặc <strong>Quản lý</strong> thực hiện. Tài khoản <strong className="underline">{ROLE_DISPLAY_NAMES[userRole]}</strong> đang xem ở chế độ Đọc.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdminOverride(true)}
+                className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[11px] font-bold rounded-lg shrink-0 cursor-pointer transition-colors"
+              >
+                Mở quyền tạm thời
+              </button>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveDiagnostic} className={`p-4 bg-indigo-50/40 rounded-xl border border-indigo-100 space-y-4 ${!canEditDiagnostics ? 'opacity-70 pointer-events-none' : ''}`}>
             <h4 className="text-xs font-bold text-indigo-950 uppercase">+ Thêm chẩn đoán kỹ thuật mới</h4>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Nguyên nhân gốc rễ (Root Cause) *</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Nguyên nhân gốc rễ (Root Cause) <span className="text-rose-500">*</span>
+              </label>
               <textarea
                 required
+                disabled={!canEditDiagnostics}
                 rows={2}
                 placeholder="VD: Chập IC nguồn TPS51225, hoặc chết bóng LED màn hình..."
                 value={rootCause}
@@ -1081,9 +1231,12 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Phương án khắc phục đề xuất *</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Phương án khắc phục đề xuất <span className="text-rose-500">*</span>
+              </label>
               <textarea
                 required
+                disabled={!canEditDiagnostics}
                 rows={2}
                 placeholder="VD: Thay thế IC nguồn, vệ sinh oxy hóa chân socket..."
                 value={solution}
@@ -1116,7 +1269,8 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all flex items-center gap-1.5"
+              disabled={!canEditDiagnostics}
+              className={`px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all flex items-center gap-1.5 ${!canEditDiagnostics ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700 cursor-pointer'}`}
             >
               <Send className="w-3.5 h-3.5" />
               Lưu chẩn đoán & Chuyển sang chờ duyệt báo giá
@@ -1162,11 +1316,29 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                 <tbody>
                   {q.items.map((it) => (
                     <tr key={it.id} className="border-t border-slate-200">
-                      <td className="p-2 font-medium">{it.name}</td>
-                      <td className="p-2 text-center">{it.quantity}</td>
-                      <td className="p-2 text-right">{formatVND(it.unit_price)}</td>
-                      <td className="p-2 text-right font-semibold">{formatVND(it.subtotal)}</td>
-                      <td className="p-2 text-center text-slate-500">{it.warranty_months} tháng</td>
+                      <td className="p-2 font-medium">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {it.item_type === 'part' ? (
+                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md font-bold text-[10px] uppercase border border-indigo-100 shrink-0 inline-flex items-center gap-1">
+                              <Boxes className="w-3 h-3 text-indigo-500" /> Linh kiện
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded-md font-bold text-[10px] uppercase border border-amber-100 shrink-0 inline-flex items-center gap-1">
+                              <Wrench className="w-3 h-3 text-amber-600" /> Công / Khác
+                            </span>
+                          )}
+                          <span className="font-semibold text-slate-900">{it.name}</span>
+                          {it.batch_code && (
+                            <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-mono text-[10px] font-bold">
+                              Lô: {it.batch_code}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2 text-center font-bold text-slate-800">{it.quantity}</td>
+                      <td className="p-2 text-right font-mono text-slate-600">{formatVND(it.unit_price)}</td>
+                      <td className="p-2 text-right font-bold text-slate-900 font-mono">{formatVND(it.subtotal)}</td>
+                      <td className="p-2 text-center text-slate-500 font-medium">{it.warranty_months} tháng</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1218,71 +1390,327 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
           ))}
 
           {/* Create new Quote Form */}
-          <form onSubmit={handleCreateQuote} className="p-4 bg-indigo-50/40 rounded-xl border border-indigo-100 space-y-4">
-            <h4 className="text-xs font-bold text-indigo-950 uppercase">+ Lập bảng báo giá mới</h4>
-            
-            <div className="space-y-3">
-              {quoteItems.map((item, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-5">
-                    <input
-                      type="text"
-                      placeholder="Tên công việc hoặc linh kiện..."
-                      value={item.name}
-                      onChange={(e) => {
-                        const copy = [...quoteItems];
-                        copy[idx].name = e.target.value;
-                        setQuoteItems(copy);
-                      }}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <NumberInput
-                      placeholder="SL"
-                      min={1}
-                      value={item.qty}
-                      onChange={(val) => {
-                        const copy = [...quoteItems];
-                        copy[idx].qty = Math.max(1, val);
-                        setQuoteItems(copy);
-                      }}
-                      className="text-center"
-                    />
-                  </div>
-                  <div className="col-span-3">
-                    <CurrencyInput
-                      placeholder="Đơn giá"
-                      value={item.price}
-                      min={0}
-                      onChange={(val) => {
-                        const copy = [...quoteItems];
-                        copy[idx].price = Math.max(0, val);
-                        setQuoteItems(copy);
-                      }}
-                      showInWords={false}
-                    />
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setQuoteItems(quoteItems.filter((_, i) => i !== idx))}
-                      className="text-rose-500 hover:text-rose-700 text-xs p-1"
-                    >
-                      Xóa
-                    </button>
-                  </div>
-                </div>
-              ))}
+          <form onSubmit={handleCreateQuote} className="p-5 bg-indigo-50/50 rounded-2xl border border-indigo-200/80 space-y-4 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-indigo-200/60">
+              <div>
+                <h4 className="text-xs font-bold text-indigo-950 uppercase flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-indigo-600" />
+                  + Lập bảng báo giá mới (Phiên bản {quotes.length + 1})
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Chọn linh kiện thực tế có sẵn từ kho hoặc tự nhập các chi phí sửa chữa / tiền công tùy chỉnh.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstPart = parts[0];
+                    if (firstPart) {
+                      const bList = StorageService.getBatches(firstPart.id);
+                      const defaultB = bList.find((b) => b.remaining_quantity > 0) || bList[0];
+                      setQuoteItems([
+                        ...quoteItems,
+                        {
+                          type: 'part',
+                          part_id: firstPart.id,
+                          batch_id: defaultB?.id,
+                          batch_code: defaultB?.batch_code,
+                          name: firstPart.name,
+                          qty: 1,
+                          price: defaultB?.selling_price || firstPart.selling_price,
+                          warranty: 6,
+                        },
+                      ]);
+                    } else {
+                      showToast('Không có linh kiện nào trong kho!', 'error');
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                >
+                  <Boxes className="w-3.5 h-3.5" />
+                  + Chọn LK từ Kho
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuoteItems([
+                      ...quoteItems,
+                      {
+                        type: 'labor',
+                        name: 'Công sửa chữa / Xử lý kỹ thuật',
+                        qty: 1,
+                        price: 250000,
+                        warranty: 3,
+                      },
+                    ]);
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  + Thêm Tiền công / Khác
+                </button>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setQuoteItems([...quoteItems, { type: 'part', name: 'Linh kiện thay thế', qty: 1, price: 500000, warranty: 6 }])}
-              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" /> Thêm dòng linh kiện / tiền công
-            </button>
+            {/* Quick Part Insertion Dropdown */}
+            <div className="p-3 bg-white rounded-xl border border-indigo-100 flex flex-col sm:flex-row items-end gap-2 text-xs">
+              <div className="flex-1 w-full">
+                <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                  Chọn nhanh linh kiện từ kho để chèn vào báo giá:
+                </label>
+                <SearchableSelect
+                  options={partOptions}
+                  value={quickQuotePartId}
+                  onChange={(val) => setQuickQuotePartId(val ? Number(val) : '')}
+                  placeholder="-- Chọn linh kiện kho sẵn có để thêm vào báo giá --"
+                  searchPlaceholder="Tìm kiếm linh kiện theo tên, SKU..."
+                  emptyMessage="Không có linh kiện phù hợp"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!quickQuotePartId) {
+                    showToast('Vui lòng chọn linh kiện từ kho!', 'error');
+                    return;
+                  }
+                  const part = parts.find((p) => p.id === Number(quickQuotePartId));
+                  if (!part) return;
+                  const bList = StorageService.getBatches(part.id);
+                  const defaultB = bList.find((b) => b.remaining_quantity > 0) || bList[0];
+                  setQuoteItems([
+                    ...quoteItems,
+                    {
+                      type: 'part',
+                      part_id: part.id,
+                      batch_id: defaultB?.id,
+                      batch_code: defaultB?.batch_code,
+                      name: part.name,
+                      qty: 1,
+                      price: defaultB?.selling_price || part.selling_price,
+                      warranty: 6,
+                    },
+                  ]);
+                  showToast(`Đã chèn ${part.name} vào báo giá!`, 'success');
+                  setQuickQuotePartId('');
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs cursor-pointer shrink-0 transition-colors"
+              >
+                + Chèn vào báo giá
+              </button>
+            </div>
+
+            {/* Items Builder Table */}
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-500 uppercase px-2">
+                <div className="col-span-2">Loại hạng mục</div>
+                <div className="col-span-4">Nội dung chi tiết</div>
+                <div className="col-span-1 text-center">SL</div>
+                <div className="col-span-2 text-right">Đơn giá (VNĐ)</div>
+                <div className="col-span-1 text-center">Bảo hành</div>
+                <div className="col-span-2 text-right">Thành tiền / Xóa</div>
+              </div>
+
+              {quoteItems.map((item, idx) => {
+                const isPart = item.type === 'part';
+                const selectedPartObj = parts.find((p) => p.id === item.part_id);
+                return (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-12 gap-2 items-center p-2.5 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs"
+                  >
+                    {/* Item Type Switcher */}
+                    <div className="col-span-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const copy = [...quoteItems];
+                          if (isPart) {
+                            copy[idx].type = 'labor';
+                            copy[idx].part_id = undefined;
+                          } else {
+                            copy[idx].type = 'part';
+                            const firstPart = parts[0];
+                            if (firstPart) {
+                              copy[idx].part_id = firstPart.id;
+                              copy[idx].name = firstPart.name;
+                              copy[idx].price = firstPart.selling_price;
+                            }
+                          }
+                          setQuoteItems(copy);
+                        }}
+                        className={`w-full py-1.5 px-2 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                          isPart
+                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                            : 'bg-amber-50 text-amber-800 border border-amber-200'
+                        }`}
+                        title="Bấm để chuyển đổi giữa Linh kiện kho và Tiền công"
+                      >
+                        {isPart ? (
+                          <>
+                            <Boxes className="w-3 h-3 text-indigo-600" />
+                            <span>LK Kho</span>
+                          </>
+                        ) : (
+                          <>
+                            <Wrench className="w-3 h-3 text-amber-600" />
+                            <span>Công/Khác</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Item Details: Part Select OR Custom Text */}
+                    <div className="col-span-4">
+                      {isPart ? (
+                        <div className="space-y-1">
+                          <SearchableSelect
+                            options={partOptions}
+                            value={item.part_id || ''}
+                            onChange={(val) => {
+                              if (!val) return;
+                              const pId = Number(val);
+                              const targetPart = parts.find((p) => p.id === pId);
+                              const copy = [...quoteItems];
+                              if (targetPart) {
+                                const bList = StorageService.getBatches(targetPart.id);
+                                const defaultB = bList.find((b) => b.remaining_quantity > 0) || bList[0];
+                                copy[idx].part_id = targetPart.id;
+                                copy[idx].name = targetPart.name;
+                                copy[idx].batch_id = defaultB?.id;
+                                copy[idx].batch_code = defaultB?.batch_code;
+                                copy[idx].price = defaultB?.selling_price || targetPart.selling_price;
+                              }
+                              setQuoteItems(copy);
+                            }}
+                            placeholder="-- Gõ SKU hoặc tên linh kiện kho --"
+                            searchPlaceholder="Tìm tên, SKU, pin, màn hình..."
+                            emptyMessage="Không tìm thấy linh kiện phù hợp"
+                          />
+                          {selectedPartObj && (() => {
+                            const availableBatches = StorageService.getBatches(selectedPartObj.id);
+                            return (
+                              <div className="space-y-1 pt-0.5">
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 px-1">
+                                  <span>SKU: <strong className="font-mono text-indigo-700">{selectedPartObj.sku}</strong></span>
+                                  <span>Tồn: <strong className={selectedPartObj.stock_quantity <= selectedPartObj.min_stock_alert ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>{selectedPartObj.stock_quantity} cái</strong></span>
+                                </div>
+
+                                {availableBatches.length > 0 && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-purple-700 shrink-0">Đợt nhập:</span>
+                                    <select
+                                      value={item.batch_id || ''}
+                                      onChange={(e) => {
+                                        const bId = Number(e.target.value);
+                                        const foundB = availableBatches.find((b) => b.id === bId);
+                                        const copy = [...quoteItems];
+                                        if (foundB) {
+                                          copy[idx].batch_id = foundB.id;
+                                          copy[idx].batch_code = foundB.batch_code;
+                                          copy[idx].price = foundB.selling_price;
+                                        } else {
+                                          copy[idx].batch_id = undefined;
+                                          copy[idx].batch_code = undefined;
+                                        }
+                                        setQuoteItems(copy);
+                                      }}
+                                      className="w-full text-[10px] font-mono font-semibold py-1 px-1.5 bg-purple-50/70 border border-purple-200 rounded-lg text-purple-900 focus:outline-hidden"
+                                    >
+                                      <option value="">-- Kho chung (Không chọn lô) --</option>
+                                      {availableBatches.map((b) => (
+                                        <option key={b.id} value={b.id}>
+                                          [{b.batch_code}] Tồn: {b.remaining_quantity} | Giá: {formatVND(b.selling_price)} {b.supplier_name ? `| NCC: ${b.supplier_name}` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="Nhập tên công việc / dịch vụ (VD: Sửa chập nguồn, Vệ sinh keo)..."
+                          value={item.name}
+                          onChange={(e) => {
+                            const copy = [...quoteItems];
+                            copy[idx].name = e.target.value;
+                            setQuoteItems(copy);
+                          }}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:border-indigo-500 focus:outline-hidden"
+                        />
+                      )}
+                    </div>
+
+                    {/* Quantity */}
+                    <div className="col-span-1">
+                      <NumberInput
+                        placeholder="SL"
+                        min={1}
+                        value={item.qty}
+                        onChange={(val) => {
+                          const copy = [...quoteItems];
+                          copy[idx].qty = Math.max(1, val);
+                          setQuoteItems(copy);
+                        }}
+                        className="text-center font-bold"
+                      />
+                    </div>
+
+                    {/* Price */}
+                    <div className="col-span-2">
+                      <CurrencyInput
+                        placeholder="Đơn giá"
+                        value={item.price}
+                        min={0}
+                        onChange={(val) => {
+                          const copy = [...quoteItems];
+                          copy[idx].price = Math.max(0, val);
+                          setQuoteItems(copy);
+                        }}
+                        showInWords={false}
+                      />
+                    </div>
+
+                    {/* Warranty Months */}
+                    <div className="col-span-1">
+                      <NumberInput
+                        min={0}
+                        max={36}
+                        value={item.warranty}
+                        onChange={(val) => {
+                          const copy = [...quoteItems];
+                          copy[idx].warranty = Math.max(0, val);
+                          setQuoteItems(copy);
+                        }}
+                        className="text-center"
+                        unit="th"
+                      />
+                    </div>
+
+                    {/* Subtotal & Delete */}
+                    <div className="col-span-2 flex items-center justify-between pl-2">
+                      <span className="font-extrabold text-slate-900 text-xs font-mono">
+                        {formatVND(item.price * item.qty)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setQuoteItems(quoteItems.filter((_, i) => i !== idx))}
+                        className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                        title="Xóa dòng này"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
             {/* Promotion & Voucher Section */}
             <div className="p-3.5 bg-white rounded-xl border border-indigo-200/80 space-y-3">
@@ -1418,100 +1846,519 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       {/* Tab 4: Parts Usage (UC-17) */}
       {activeTab === 'parts' && (
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Linh kiện & Vật tư sử dụng (UC-17)</h3>
-              <p className="text-xs text-slate-500">Xuất kho linh kiện cho phiếu sửa chữa và trừ tồn kho tự động.</p>
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Boxes className="w-5 h-5 text-indigo-600" />
+                Linh kiện & Vật tư sử dụng (UC-17)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Xuất kho linh kiện chính xác cho phiếu sửa chữa, ghi nhận KTV thực hiện, tự động trừ tồn kho & hỗ trợ hoàn trả kho.
+              </p>
+            </div>
+            {/* Quick summary metrics */}
+            <div className="flex items-center gap-4 text-xs">
+              <div className="px-3 py-1.5 bg-indigo-50 rounded-xl border border-indigo-100">
+                <span className="text-slate-500 font-medium">Linh kiện đã xuất: </span>
+                <strong className="text-indigo-700 font-bold">
+                  {partUsages.filter((u) => u.status === 'Used').reduce((acc, u) => acc + u.quantity, 0)} cái
+                </strong>
+              </div>
+              <div className="px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-100">
+                <span className="text-slate-500 font-medium">Tổng trị giá: </span>
+                <strong className="text-emerald-700 font-extrabold">
+                  {formatVND(
+                    partUsages.filter((u) => u.status === 'Used').reduce((acc, u) => acc + u.selling_price * u.quantity, 0)
+                  )}
+                </strong>
+              </div>
             </div>
           </div>
 
+          {!canExportParts && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between text-amber-900 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Giới hạn quyền vai trò:</strong> Thao tác chọn & xuất kho linh kiện do <strong>Kỹ thuật viên (KTV)</strong> hoặc <strong>Quản lý</strong> phụ trách. Bạn đang ở chế độ Đọc.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdminOverride(true)}
+                className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[11px] font-bold rounded-lg shrink-0 cursor-pointer transition-colors"
+              >
+                Mở quyền tạm thời
+              </button>
+            </div>
+          )}
+
           {/* Fast Searchable Part Picker Bar */}
-          <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-200 text-xs space-y-3">
-            <h4 className="font-bold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wide">
+          <div className={`p-4 bg-indigo-50/60 rounded-2xl border border-indigo-200 text-xs space-y-3 ${!canExportParts ? 'opacity-60 pointer-events-none' : ''}`}>
+            <h4 className="font-bold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wide text-xs">
               <Boxes className="w-4 h-4 text-indigo-600" />
-              Tìm kiếm linh kiện xuất kho nhanh:
+              Chọn linh kiện để xuất kho vào phiếu:
             </h4>
             <div className="flex flex-col md:flex-row items-end gap-3">
               <div className="flex-1 w-full">
                 <SearchableSelect
                   options={partOptions}
                   value={selectedPartId}
+                  disabled={!canExportParts}
                   onChange={(val) => setSelectedPartId(val ? Number(val) : '')}
                   placeholder="-- Gõ tên linh kiện hoặc mã SKU để tìm nhanh --"
-                  searchPlaceholder="Tìm linh kiện, pin, màn hình, quạt, sạc..."
-                  emptyMessage="Không tìm thấy linh kiện phù hợp"
+                  searchPlaceholder="Tìm linh kiện, pin, màn hình, quạt, sạc, RAM, SSD..."
+                  emptyMessage="Không tìm thấy linh kiện phù hợp trong kho"
                 />
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <div className="w-24">
+                <div className="w-28">
                   <NumberInput
                     min={1}
                     value={partExportQty}
                     onChange={(val) => setPartExportQty(Math.max(1, val))}
-                    placeholder="SL"
-                    className="text-center"
+                    placeholder="Số lượng"
+                    className="text-center font-bold"
                   />
                 </div>
                 <button
                   type="button"
+                  disabled={!canExportParts}
                   onClick={() => {
                     if (!selectedPartId) {
-                      showToast('Vui lòng chọn linh kiện cần xuất!', 'error');
+                      showToast('Vui lòng chọn linh kiện cần xuất kho!', 'error');
                       return;
                     }
                     const part = parts.find((p) => p.id === Number(selectedPartId));
                     if (!part) return;
                     if (part.stock_quantity < partExportQty) {
-                      showToast(`Không đủ tồn kho (Hiện có: ${part.stock_quantity})!`, 'error');
+                      showToast(`Không đủ tồn kho! Hiện tại chỉ còn ${part.stock_quantity} cái.`, 'error');
                       return;
                     }
-                    StorageService.updatePartStock(part.id, -partExportQty);
-                    StorageService.addAuditLog(
-                      'EXPORT_PART',
-                      'parts',
-                      part.sku,
-                      `Xuất ${partExportQty} cái [${part.name}] cho phiếu ${ticket.ticket_code}`,
-                      currentUser?.full_name
-                    );
-                    showToast(`Đã xuất ${partExportQty} ${part.name} vào phiếu sửa chữa!`, 'success');
-                    setSelectedPartId('');
-                    setPartExportQty(1);
-                    reloadTicket();
+                    const bList = StorageService.getBatches(part.id);
+                    const defaultB = bList.find((b) => b.remaining_quantity > 0) || bList[0];
+                    setExportModalBatchId(defaultB ? defaultB.id : '');
+                    setExportingPart(part);
+                    setExportModalQty(partExportQty);
                   }}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  className={`px-4 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 flex items-center gap-1.5 whitespace-nowrap transition-all ${!canExportParts ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700 cursor-pointer'}`}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Xuất kho vào phiếu
+                  <Plus className="w-4 h-4" />
+                  Xác nhận xuất kho
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3">
-            <h4 className="font-bold text-slate-800">Danh sách linh kiện phổ biến:</h4>
+          {/* Popular Fast Export Cards */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-3">
+            <h4 className="font-bold text-slate-800 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-500" />
+              Linh kiện kho sẵn có (Bấm để mở form xuất kho nhanh):
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {parts.map((p) => (
-                <div key={p.id} className="p-3 bg-white rounded-xl border border-slate-200 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-slate-800">{p.name}</p>
-                    <p className="text-slate-500 text-[11px]">Tồn: <strong className={p.stock_quantity <= p.min_stock_alert ? 'text-rose-600' : 'text-emerald-600'}>{p.stock_quantity}</strong> — Giá: {formatVND(p.selling_price)}</p>
+                <div
+                  key={p.id}
+                  className="p-3 bg-white rounded-xl border border-slate-200 hover:border-indigo-300 hover:shadow-xs transition-all flex justify-between items-center"
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-slate-800 line-clamp-1">{p.name}</p>
+                    <p className="text-slate-500 text-[11px]">
+                      SKU: <span className="font-mono text-indigo-700 font-bold">{p.sku}</span>
+                    </p>
+                    <p className="text-slate-500 text-[11px]">
+                      Tồn:{' '}
+                      <strong className={p.stock_quantity <= p.min_stock_alert ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                        {p.stock_quantity}
+                      </strong>{' '}
+                      — Giá: <span className="font-bold text-slate-900">{formatVND(p.selling_price)}</span>
+                    </p>
+                    {p.supplier_name && (
+                      <p className="text-[10px] text-slate-400 truncate max-w-[180px]">
+                        NCC: {p.supplier_name}
+                      </p>
+                    )}
                   </div>
                   <button
+                    type="button"
                     onClick={() => {
                       if (p.stock_quantity <= 0) {
-                        showToast('Linh kiện này đã hết hàng trong kho!', 'error');
+                        showToast(`Linh kiện ${p.name} hiện đã hết hàng trong kho!`, 'error');
                         return;
                       }
-                      StorageService.updatePartStock(p.id, -1);
-                      showToast(`Đã xuất 1 ${p.name} vào phiếu sửa chữa!`, 'success');
-                      reloadTicket();
+                      const bList = StorageService.getBatches(p.id);
+                      const defaultB = bList.find((b) => b.remaining_quantity > 0) || bList[0];
+                      setExportModalBatchId(defaultB ? defaultB.id : '');
+                      setExportingPart(p);
+                      setExportModalQty(1);
                     }}
-                    className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs shrink-0 ml-2"
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shrink-0 ml-2 shadow-xs transition-colors cursor-pointer"
                   >
-                    Xuất 1 cái
+                    Xuất kho
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Table of Exported Parts attached to Ticket */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <PackageCheck className="w-4 h-4 text-emerald-600" />
+                Danh sách linh kiện đã xuất cho phiếu sửa chữa này ({partUsages.length})
+              </h4>
+              {partUsages.length > 0 && (
+                <span className="text-xs text-slate-500">
+                  Tổng tiền linh kiện: <strong className="text-indigo-700 font-bold">{formatVND(partUsages.filter(u => u.status === 'Used').reduce((a, b) => a + (b.selling_price * b.quantity), 0))}</strong>
+                </span>
+              )}
+            </div>
+
+            {partUsages.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 space-y-2">
+                <Boxes className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs font-semibold">Chưa có linh kiện nào được xuất kho cho phiếu sửa chữa này.</p>
+                <p className="text-[11px] text-slate-400">
+                  Hãy chọn linh kiện từ bảng trên và nhấn nút "Xác nhận xuất kho" để ghi nhận.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                    <tr>
+                      <th className="py-3 px-4">Mã SKU & Linh kiện</th>
+                      <th className="py-3 px-4">Nhà cung cấp</th>
+                      <th className="py-3 px-4 text-center">Số lượng</th>
+                      <th className="py-3 px-4 text-right">Đơn giá xuất</th>
+                      <th className="py-3 px-4 text-right">Thành tiền</th>
+                      <th className="py-3 px-4">KTV thực hiện</th>
+                      <th className="py-3 px-4">Thời gian xuất</th>
+                      <th className="py-3 px-4 text-center">Trạng thái</th>
+                      <th className="py-3 px-4 text-center">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {partUsages.map((usage) => {
+                      const linkedPart = parts.find((p) => p.id === usage.part_id);
+                      const suppName = linkedPart?.supplier_name || 'N/A';
+                      const isReturned = usage.status === 'Returned';
+                      return (
+                        <tr key={usage.id} className={`hover:bg-slate-50 transition-colors ${isReturned ? 'bg-slate-50/60 opacity-70' : ''}`}>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-bold text-indigo-700">{usage.sku}</span>
+                              {usage.batch_code && (
+                                <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-mono text-[10px] font-bold">
+                                  Lô: {usage.batch_code}
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-semibold text-slate-800">{usage.part_name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 text-[11px]">
+                            <div className="flex items-center gap-1 font-medium">
+                              <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[150px]">{suppName}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center font-extrabold text-slate-900">{usage.quantity}</td>
+                          <td className="py-3 px-4 text-right text-slate-600">{formatVND(usage.selling_price)}</td>
+                          <td className={`py-3 px-4 text-right font-bold ${isReturned ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                            {formatVND(usage.selling_price * usage.quantity)}
+                          </td>
+                          <td className="py-3 px-4 text-slate-700 font-medium">{usage.technician_name}</td>
+                          <td className="py-3 px-4 text-slate-500 text-[11px] font-mono">{formatDateTime(usage.created_at)}</td>
+                          <td className="py-3 px-4 text-center">
+                            {isReturned ? (
+                              <span className="px-2.5 py-1 bg-slate-200 text-slate-700 rounded-full font-bold text-[11px] inline-flex items-center gap-1">
+                                <RotateCcw className="w-3 h-3" /> Đã hoàn trả kho
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[11px] inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Đã xuất sử dụng
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {!isReturned && (
+                              <button
+                                type="button"
+                                onClick={() => setReturningUsage(usage)}
+                                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold rounded-xl text-xs flex items-center gap-1 mx-auto cursor-pointer transition-colors"
+                                title="Hoàn trả linh kiện này về lại kho hàng"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                                Hoàn trả kho
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: Confirm Part Export (UC-17) */}
+      {exportingPart && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                  <Boxes className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Xác nhận Xuất kho Linh kiện</h3>
+                  <p className="text-xs text-slate-500">Mã phiếu: {ticket.ticket_code}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setExportingPart(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Part Card Details */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="font-mono text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                    {exportingPart.sku}
+                  </span>
+                  <h4 className="font-bold text-slate-900 text-sm mt-1">{exportingPart.name}</h4>
+                </div>
+                <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-full">
+                  Tồn kho: {exportingPart.stock_quantity}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-slate-600 pt-2 border-t border-slate-200/60">
+                <p>
+                  Nhà cung cấp:{' '}
+                  <strong className="text-slate-800 block truncate">{exportingPart.supplier_name || 'Công ty SG Parts'}</strong>
+                </p>
+                <p>
+                  Đơn giá xuất:{' '}
+                  <strong className="text-indigo-700 block text-sm">
+                    {formatVND(
+                      exportModalBatchId
+                        ? StorageService.getBatches(exportingPart.id).find((b) => b.id === Number(exportModalBatchId))?.selling_price || exportingPart.selling_price
+                        : exportingPart.selling_price
+                    )}
+                  </strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Form controls */}
+            <div className="space-y-3 text-xs">
+              {/* Batch selection dropdown */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>Chọn đợt nhập kho / lô hàng xuất <span className="text-rose-500">*</span></span>
+                  <span className="text-[10px] text-purple-700 font-semibold">Theo dõi lô đợt</span>
+                </label>
+                {(() => {
+                  const partBatches = StorageService.getBatches(exportingPart.id);
+                  if (partBatches.length === 0) {
+                    return (
+                      <div className="p-2 bg-slate-100 rounded-xl text-[11px] text-slate-500 italic">
+                        Linh kiện này chưa phân đợt nhập riêng (Xuất trực tiếp từ kho chung).
+                      </div>
+                    );
+                  }
+                  return (
+                    <select
+                      value={exportModalBatchId}
+                      onChange={(e) => {
+                        const bId = Number(e.target.value);
+                        setExportModalBatchId(bId || '');
+                      }}
+                      className="w-full px-3 py-2 bg-purple-50/70 border border-purple-200 font-mono text-xs font-semibold text-purple-950 rounded-xl focus:outline-hidden"
+                    >
+                      <option value="">-- Kho chung (Không chọn đợt) --</option>
+                      {partBatches.map((b) => (
+                        <option key={b.id} value={b.id} disabled={b.remaining_quantity <= 0}>
+                          [{b.batch_code}] Còn: {b.remaining_quantity}/{b.import_quantity} cái | Giá: {formatVND(b.selling_price)} {b.supplier_name ? `| NCC: ${b.supplier_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  );
+                })()}
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Số lượng xuất <span className="text-rose-500">*</span>
+                </label>
+                <NumberInput
+                  min={1}
+                  max={exportingPart.stock_quantity}
+                  value={exportModalQty}
+                  onChange={(val) => setExportModalQty(Math.min(exportingPart.stock_quantity, Math.max(1, val)))}
+                  unit="cái"
+                  className="font-bold text-sm text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Kỹ thuật viên chịu trách nhiệm xuất <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={exportModalTech}
+                  onChange={(e) => setExportModalTech(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-hidden"
+                >
+                  {technicians.map((tech) => (
+                    <option key={tech.id} value={tech.full_name}>
+                      {tech.full_name} ({ROLE_DISPLAY_NAMES[tech.role] || tech.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Total Calculation */}
+              <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-100 flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-700">Tổng thành tiền xuất kho:</span>
+                <span className="font-extrabold text-indigo-700 text-base">
+                  {formatVND(
+                    (exportModalBatchId
+                      ? StorageService.getBatches(exportingPart.id).find((b) => b.id === Number(exportModalBatchId))?.selling_price || exportingPart.selling_price
+                      : exportingPart.selling_price) * exportModalQty
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setExportingPart(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (exportModalQty <= 0 || exportModalQty > exportingPart.stock_quantity) {
+                    showToast(`Số lượng không hợp lệ! Tồn kho hiện có: ${exportingPart.stock_quantity}`, 'error');
+                    return;
+                  }
+                  try {
+                    const chosenBatch = exportModalBatchId
+                      ? StorageService.getBatches(exportingPart.id).find((b) => b.id === Number(exportModalBatchId))
+                      : undefined;
+
+                    StorageService.addPartUsage({
+                      ticket_id: ticketId,
+                      part_id: exportingPart.id,
+                      batch_id: chosenBatch?.id,
+                      batch_code: chosenBatch?.batch_code,
+                      part_name: exportingPart.name,
+                      sku: exportingPart.sku,
+                      quantity: exportModalQty,
+                      cost_price: chosenBatch?.cost_price || exportingPart.cost_price,
+                      selling_price: chosenBatch?.selling_price || exportingPart.selling_price,
+                      technician_name: exportModalTech,
+                    });
+                    const bMsg = chosenBatch ? ` [Đợt ${chosenBatch.batch_code}]` : '';
+                    showToast(`Đã xuất kho ${exportModalQty}x ${exportingPart.name}${bMsg} cho phiếu ${ticket.ticket_code}!`, 'success');
+                    setExportingPart(null);
+                    setExportModalBatchId('');
+                    setExportModalQty(1);
+                    setSelectedPartId('');
+                    reloadPartUsages();
+                  } catch (err: any) {
+                    showToast(err.message || 'Lỗi khi xuất kho linh kiện', 'error');
+                  }
+                }}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Xác nhận Xuất kho & Trừ tồn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Confirm Return Part to Stock (UC-17) */}
+      {returningUsage && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Hoàn trả Linh kiện về Kho</h3>
+                  <p className="text-xs text-slate-500">Khôi phục tồn kho tự động</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReturningUsage(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200 text-xs space-y-2">
+              <p className="text-amber-950 font-semibold">
+                Bạn có chắc chắn muốn hoàn trả linh kiện sau đây từ phiếu <strong className="font-mono">{ticket.ticket_code}</strong> về lại kho hàng?
+              </p>
+              <div className="pt-2 border-t border-amber-200/60 font-medium text-slate-800 space-y-1">
+                <p>Mã SKU: <strong className="font-mono text-indigo-700">{returningUsage.sku}</strong></p>
+                <p>Tên linh kiện: <strong>{returningUsage.part_name}</strong></p>
+                <p>Số lượng hoàn trả: <strong className="text-amber-800 text-sm font-bold">+{returningUsage.quantity} cái</strong></p>
+                <p>Giá trị hoàn trả: <strong>{formatVND(returningUsage.selling_price * returningUsage.quantity)}</strong></p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600">
+              <p className="flex items-center gap-1.5 font-medium text-slate-800">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                Tồn kho của linh kiện này sẽ được tự động cộng thêm +{returningUsage.quantity} cái.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 text-xs">
+              <button
+                type="button"
+                onClick={() => setReturningUsage(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    StorageService.returnPartUsage(returningUsage.id, currentUser?.full_name || 'KTV');
+                    showToast(`Đã hoàn trả ${returningUsage.quantity}x ${returningUsage.part_name} về kho thành công!`, 'success');
+                    setReturningUsage(null);
+                    reloadPartUsages();
+                  } catch (err: any) {
+                    showToast(err.message || 'Lỗi khi hoàn trả linh kiện', 'error');
+                  }
+                }}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-md shadow-amber-600/30 flex items-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Xác nhận Hoàn trả Kho
+              </button>
             </div>
           </div>
         </div>
@@ -1527,12 +2374,31 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
             <button
               onClick={handleSaveQC}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-sm flex items-center gap-1.5"
+              disabled={!canPerformQC}
+              className={`px-4 py-2 text-white font-bold rounded-xl text-xs shadow-sm flex items-center gap-1.5 ${!canPerformQC ? 'bg-slate-300 opacity-60 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'}`}
             >
               <CheckCircle2 className="w-4 h-4" />
               Lưu & Xác nhận ĐẠT QC
             </button>
           </div>
+
+          {!canPerformQC && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between text-amber-900 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Giới hạn quyền vai trò:</strong> Quy trình kiểm tra chất lượng QC 8 điểm do <strong>KTV Kiểm chuẩn</strong> hoặc <strong>Quản lý</strong> thực hiện. Bạn đang ở chế độ Đọc.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdminOverride(true)}
+                className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[11px] font-bold rounded-lg shrink-0 cursor-pointer transition-colors"
+              >
+                Mở quyền tạm thời
+              </button>
+            </div>
+          )}
 
           <div className="divide-y divide-slate-100">
             {qcItems.map((item, idx) => (
@@ -1570,7 +2436,26 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
 
       {/* Tab 6: Payments & Debt (UC-21, UC-22) */}
       {activeTab === 'payments' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-4">
+          {!canProcessPayments && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between text-amber-900 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Giới hạn quyền vai trò:</strong> Thao tác ghi nhận thu tiền mặt, áp dụng Mã giảm giá/Voucher và quẹt thẻ SmartPOS do <strong>Bộ phận Lễ tân & Thu ngân</strong> phụ trách. Bạn đang ở chế độ Đọc.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdminOverride(true)}
+                className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[11px] font-bold rounded-lg shrink-0 cursor-pointer transition-colors"
+              >
+                Mở quyền tạm thời
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Add Payment Form & Payment History */}
           <div className="lg:col-span-2 space-y-6">
             {/* Order Financial Summary & Promo Bar */}
@@ -1946,6 +2831,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
           </div>
         </div>
+        </div>
       )}
 
       {/* Tab 7: Handover & Warranty (UC-23, UC-24) */}
@@ -1958,9 +2844,29 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
           </div>
 
+          {!canCompleteDelivery && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between text-amber-900 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Giới hạn quyền vai trò:</strong> Xác nhận hoàn tất bàn giao thiết bị & kích hoạt tem bảo hành do <strong>Bộ phận Lễ tân & Thu ngân</strong> thực hiện khi trả máy cho khách. Bạn đang ở chế độ Đọc.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdminOverride(true)}
+                className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[11px] font-bold rounded-lg shrink-0 cursor-pointer transition-colors"
+              >
+                Mở quyền tạm thời
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Họ tên người nhận máy *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Họ tên người nhận máy <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 value={receiverName}
@@ -1969,7 +2875,9 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Số điện thoại người nhận *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Số điện thoại người nhận <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="tel"
                 value={receiverPhone}
@@ -2010,7 +2918,8 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
 
           <button
             onClick={handleDeliverAndWarranty}
-            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer text-xs"
+            disabled={!canCompleteDelivery}
+            className={`px-6 py-3 text-white font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all text-xs ${!canCompleteDelivery ? 'bg-slate-300 opacity-60 cursor-not-allowed shadow-none' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 cursor-pointer'}`}
           >
             <CheckCircle2 className="w-4 h-4" />
             Xác nhận Bàn giao máy & Kích hoạt bảo hành điện tử
