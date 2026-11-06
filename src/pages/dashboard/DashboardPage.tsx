@@ -227,37 +227,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   return (
     <div className="space-y-6">
       {/* Top Welcome & Quick Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 rounded-2xl text-white shadow-lg">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-600 via-sky-500 to-indigo-600 p-6 rounded-2xl text-white shadow-md shadow-blue-500/20 border border-sky-400/40">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-400/30">
+            <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold bg-white text-blue-700 shadow-2xs">
               TRUNG TÂM ĐIỀU HÀNH
             </span>
-            <span className="text-xs text-slate-400">Hôm nay: {formatDateTime(new Date().toISOString())}</span>
+            <span className="text-xs text-sky-100 font-medium">Hôm nay: {formatDateTime(new Date().toISOString())}</span>
           </div>
-          <h2 className="text-xl md:text-2xl font-bold mt-1 text-white">{settings.store_name}</h2>
-          <p className="text-xs text-slate-300 mt-1 max-w-xl">{settings.store_slogan}</p>
+          <h2 className="text-xl md:text-2xl font-extrabold mt-1.5 text-white">{settings.store_name}</h2>
+          <p className="text-xs text-sky-100 mt-1 max-w-xl font-medium">{settings.store_slogan}</p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => onNavigate('intake')}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all"
+            className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold rounded-xl text-sm flex items-center gap-2 shadow-md transition-all cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
             Tiếp nhận máy mới
           </button>
           <button
             onClick={() => onNavigate('kanban')}
-            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-xl text-sm flex items-center gap-1.5 border border-slate-700 transition-colors"
+            className="px-3.5 py-2.5 bg-white hover:bg-sky-50 text-blue-700 font-bold rounded-xl text-sm flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
             Bảng tiến độ Kanban
           </button>
           <button
             onClick={() => onNavigate('promotions')}
-            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 font-medium rounded-xl text-sm flex items-center gap-1.5 border border-slate-700 transition-colors"
+            className="px-3.5 py-2.5 bg-amber-300 hover:bg-amber-200 text-slate-950 font-bold rounded-xl text-sm flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
-            <BadgePercent className="w-4 h-4 text-indigo-400" />
+            <BadgePercent className="w-4 h-4 text-slate-900" />
             Ưu đãi & Voucher
           </button>
         </div>

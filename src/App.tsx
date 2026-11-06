@@ -163,7 +163,7 @@ function MainApp() {
 
         <main
           key={sqlHydratedVersion}
-          className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6 bg-gradient-to-br from-[#eef2f7] via-[#f1f5f9] to-[#e8eef7]"
+          className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6 bg-gradient-to-br from-sky-50/80 via-[#f4f8fc] to-indigo-50/70"
         >
           {mustChangePassword && effectiveTab === 'profile' && (
             <div className="w-full mb-4 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold">

@@ -794,28 +794,28 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   return (
     <div className="space-y-5 w-full pb-12">
       {/* Top Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-900 text-white p-5 rounded-2xl border border-indigo-800/70 shadow-lg shadow-indigo-950/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-blue-600 via-sky-500 to-indigo-600 text-white p-5 rounded-2xl border border-sky-400/50 shadow-md shadow-blue-500/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <button
             onClick={onBack}
-            className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white border border-white/15 transition-colors cursor-pointer"
+            className="p-2.5 bg-white/20 hover:bg-white/30 rounded-xl text-white border border-white/30 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-mono font-extrabold text-lg text-white bg-indigo-500/30 border border-indigo-400/40 px-3 py-0.5 rounded-xl tracking-wide shadow-2xs">
+              <span className="font-mono font-extrabold text-lg text-blue-700 bg-white px-3.5 py-0.5 rounded-xl tracking-wide shadow-sm">
                 {ticket.ticket_code}
               </span>
-              <span className={`text-xs px-2.5 py-1 rounded-lg font-bold border shadow-2xs ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}>
+              <span className={`text-xs px-3 py-1 rounded-lg font-extrabold border shadow-xs ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}>
                 {statusConf.label}
               </span>
-              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border shadow-2xs ${priorityConf.badgeClass}`}>
+              <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-extrabold border shadow-xs ${priorityConf.badgeClass}`}>
                 {priorityConf.label}
               </span>
             </div>
-            <p className="text-xs text-indigo-200/90 mt-1.5">
-              Khách hàng: <strong className="text-white font-bold">{ticket.customer_name}</strong> ({ticket.customer_phone}) — Nhận ngày: <span className="text-indigo-100">{formatDateTime(ticket.created_at)}</span>
+            <p className="text-xs text-sky-50 mt-1.5 font-medium">
+              Khách hàng: <strong className="text-white font-extrabold underline decoration-white/40">{ticket.customer_name}</strong> ({ticket.customer_phone}) — Nhận ngày: <span className="text-white font-semibold">{formatDateTime(ticket.created_at)}</span>
             </p>
           </div>
         </div>
@@ -824,21 +824,21 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setPrintType('intake')}
-            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 border border-white/20 transition-colors cursor-pointer"
+            className="px-3.5 py-2 bg-white hover:bg-sky-50 text-blue-700 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5 text-indigo-300" />
+            <Printer className="w-3.5 h-3.5 text-blue-600" />
             Phiếu tiếp nhận
           </button>
           <button
             onClick={() => setPrintType('invoice')}
-            className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm shadow-emerald-950/30 transition-colors cursor-pointer"
+            className="px-3.5 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
             <DollarSign className="w-3.5 h-3.5" />
             Hóa đơn thu tiền
           </button>
           <button
             onClick={() => setPrintType('handover')}
-            className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm shadow-amber-950/30 transition-colors cursor-pointer"
+            className="px-3.5 py-2 bg-amber-300 hover:bg-amber-200 text-slate-950 font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             Biên bản bàn giao

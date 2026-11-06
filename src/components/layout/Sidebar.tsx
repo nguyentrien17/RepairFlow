@@ -159,9 +159,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
   ];
 
   return (
-    <aside className="w-64 bg-gradient-to-b from-[#0b1120] via-[#111a33] to-[#0b1120] text-slate-300 flex flex-col shrink-0 no-print select-none border-r border-indigo-950/80 shadow-xl h-full overflow-hidden">
-      <div className="p-4 border-b border-indigo-950/80 shrink-0 bg-white/[0.02]">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300/80">Điều hướng hệ thống</p>
+    <aside className="w-64 bg-gradient-to-b from-indigo-800 via-indigo-900 to-blue-950 text-white flex flex-col shrink-0 no-print select-none border-r border-indigo-700/60 shadow-lg h-full overflow-hidden">
+      <div className="p-4 border-b border-white/15 shrink-0 bg-white/5">
+        <p className="text-[11px] font-extrabold uppercase tracking-wider text-sky-200">Điều hướng hệ thống</p>
       </div>
 
       <nav className="p-3 space-y-1 overflow-y-auto min-h-0 flex-1 text-sm font-medium custom-dark-scrollbar">
@@ -178,18 +178,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
               onClick={() => onTabChange(item.id as TabType)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-pointer ${
                 item.highlight
-                  ? 'bg-gradient-to-r from-indigo-500 via-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/35 hover:from-indigo-400 hover:to-violet-500 font-bold mb-2.5 ring-1 ring-white/20'
+                  ? 'bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 text-slate-950 shadow-md shadow-emerald-950/25 hover:from-emerald-300 hover:to-cyan-300 font-extrabold mb-2.5'
                   : isActive
-                  ? 'bg-gradient-to-r from-indigo-600/35 to-violet-600/15 text-white border border-indigo-400/40 font-bold shadow-sm'
-                  : 'text-slate-300/85 hover:text-white hover:bg-white/[0.07]'
+                  ? 'bg-white text-indigo-900 font-extrabold shadow-md'
+                  : 'text-indigo-100 hover:text-white hover:bg-white/15'
               }`}
             >
               <div className="flex items-center gap-3">
-                <Icon className={`w-4 h-4 ${item.highlight ? 'text-white' : isActive ? 'text-indigo-300' : 'text-slate-400'}`} />
+                <Icon
+                  className={`w-4 h-4 ${
+                    item.highlight ? 'text-slate-950' : isActive ? 'text-indigo-600' : 'text-sky-300'
+                  }`}
+                />
                 <span>{item.label}</span>
               </div>
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-500 text-white shadow-xs">
+                <span
+                  className={`px-2 py-0.5 text-[11px] font-extrabold rounded-full ${
+                    isActive ? 'bg-indigo-600 text-white' : 'bg-amber-300 text-slate-950'
+                  }`}
+                >
                   {item.badge}
                 </span>
               )}
@@ -199,47 +207,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
       </nav>
 
       {/* Footer User Profile & Store Tag */}
-      <div className="p-3 border-t border-slate-800 shrink-0 space-y-2">
+      <div className="p-3 border-t border-white/15 bg-indigo-950/50 shrink-0 space-y-2">
         {currentUser && (
           <div className="space-y-1.5">
             <button
               onClick={() => onTabChange('profile')}
               className={`w-full p-2 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer ${
                 currentTab === 'profile'
-                  ? 'bg-indigo-600/30 text-white border border-indigo-500/40'
-                  : 'hover:bg-slate-800/80 text-slate-300'
+                  ? 'bg-white text-indigo-900 shadow-sm'
+                  : 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-xs">
+                <div className="w-7 h-7 rounded-lg bg-amber-300 text-slate-950 font-extrabold flex items-center justify-center text-xs shrink-0 shadow-xs">
                   {currentUser.full_name.charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-white truncate">{currentUser.full_name}</p>
-                  <p className="text-[10px] text-slate-400 capitalize">{currentUser.role}</p>
+                  <p className={`text-xs font-bold truncate ${currentTab === 'profile' ? 'text-indigo-950' : 'text-white'}`}>
+                    {currentUser.full_name}
+                  </p>
+                  <p className={`text-[10px] capitalize ${currentTab === 'profile' ? 'text-indigo-600' : 'text-sky-200'}`}>
+                    {currentUser.role}
+                  </p>
                 </div>
               </div>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-1" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 ml-1" />
             </button>
 
             {/* Direct Logout Button */}
             <button
               type="button"
               onClick={() => setShowLogoutModal(true)}
-              className="w-full px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 text-xs font-medium flex items-center justify-between transition-colors group cursor-pointer"
+              className="w-full px-2.5 py-1.5 rounded-lg text-rose-200 hover:text-white hover:bg-rose-500/30 text-xs font-semibold flex items-center justify-between transition-colors group cursor-pointer"
             >
               <span className="flex items-center gap-2">
-                <LogOut className="w-3.5 h-3.5 text-slate-500 group-hover:text-rose-400 transition-colors" />
+                <LogOut className="w-3.5 h-3.5 text-rose-300 group-hover:text-white transition-colors" />
                 <span>Đăng xuất</span>
               </span>
-              <span className="text-[10px] text-slate-500 group-hover:text-rose-400 font-mono">Thoát</span>
+              <span className="text-[10px] text-rose-300 group-hover:text-white font-mono">Thoát</span>
             </button>
           </div>
         )}
 
-        <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
-          <span>RepairFlow ERP</span>
-          <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">v2.5</span>
+        <div className="px-1 text-[11px] text-sky-200/80 flex items-center justify-between">
+          <span className="font-semibold">RepairFlow ERP</span>
+          <span className="text-[10px] bg-white/15 text-white font-bold px-1.5 py-0.5 rounded">v2.5</span>
         </div>
       </div>
 

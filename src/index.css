@@ -25,12 +25,12 @@ main .bg-white.rounded-3xl {
   background: #94a3b8;
 }
 
-/* Sidebar dark scrollbar */
+/* Sidebar scrollbar */
 aside nav::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: rgba(147, 197, 253, 0.35);
 }
 aside nav::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(147, 197, 253, 0.55);
 }
 
 @media print {

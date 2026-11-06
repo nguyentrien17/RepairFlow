@@ -95,41 +95,41 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
   };
 
   return (
-    <header className="h-16 bg-white/95 backdrop-blur-md border-t-2 border-t-indigo-600 border-b border-slate-300/80 shadow-xs px-4 lg:px-6 flex items-center justify-between shrink-0 z-30 no-print select-none">
+    <header className="h-16 bg-gradient-to-r from-indigo-700 via-blue-600 to-sky-600 text-white border-b border-blue-700/50 shadow-md px-4 lg:px-6 flex items-center justify-between shrink-0 z-30 no-print select-none">
       {/* Brand & Title */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30 ring-1 ring-indigo-400/30">
+        <div className="w-10 h-10 rounded-xl bg-white text-indigo-700 flex items-center justify-center shadow-md ring-2 ring-white/30">
           <Wrench className="w-5 h-5" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-extrabold bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-700 bg-clip-text text-transparent tracking-tight text-lg">
+            <h1 className="font-extrabold text-white tracking-tight text-lg drop-shadow-2xs">
               RepairFlow
             </h1>
-            <span className="text-[11px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-2xs">
+            <span className="text-[11px] font-extrabold bg-amber-300 text-slate-950 px-2 py-0.5 rounded-md shadow-2xs">
               v2.5
             </span>
           </div>
-          <p className="text-xs text-slate-500 font-medium hidden sm:block">Quản lý tiếp nhận & sửa chữa thiết bị điện tử</p>
+          <p className="text-xs text-sky-100 font-medium hidden sm:block">Quản lý tiếp nhận & sửa chữa thiết bị điện tử</p>
         </div>
       </div>
 
       {/* Global Search Bar (UC-30) */}
       <div className="relative max-w-md w-full mx-4 hidden md:block">
         <div className="relative">
-          <Search className="w-4 h-4 text-indigo-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-indigo-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={handleSearch}
             placeholder="Tìm theo mã SC-..., Tên khách, SĐT, Serial thiết bị..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-100/90 hover:bg-slate-100 focus:bg-white text-sm rounded-xl border border-slate-300/80 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 focus:outline-hidden transition-all text-slate-800 placeholder-slate-400"
+            className="w-full pl-10 pr-4 py-2 bg-white/95 hover:bg-white focus:bg-white text-sm rounded-xl border border-white/40 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/30 focus:outline-hidden transition-all text-slate-800 placeholder-slate-400 shadow-inner"
           />
         </div>
 
         {/* Search Results Dropdown */}
         {isSearching && searchResults.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50">
+          <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50 text-slate-800">
             <div className="p-2 text-xs font-semibold text-slate-500 uppercase border-b border-slate-100 bg-slate-50">
               Kết quả tìm kiếm ({searchResults.length})
             </div>
@@ -169,10 +169,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
               ? `Đang kết nối MySQL (${dbStatus.host}:${dbStatus.port}/${dbStatus.database}) qua Drizzle ORM - Nhấn để đồng bộ`
               : `Chưa kết nối MySQL (${dbStatus.host || '127.0.0.1'}:${dbStatus.port || 3306}) - Nhấn để kết nối lại`
           }
-          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
             dbStatus.connected
-              ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-              : 'bg-slate-100 text-slate-600 border-slate-200'
+              ? 'bg-white/20 text-white border-white/35 hover:bg-white/30'
+              : 'bg-amber-400/25 text-amber-100 border-amber-300/40 hover:bg-amber-400/35'
           }`}
         >
           <Database className="w-3.5 h-3.5" />
@@ -185,7 +185,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
         <button
           onClick={() => setShowResetConfirm(true)}
           title="Khôi phục dữ liệu mẫu ban đầu"
-          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="p-2 text-white/90 hover:text-white hover:bg-white/15 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <RotateCcw className="w-4 h-4" />
           <span className="hidden xl:inline">Reset mẫu</span>
@@ -195,7 +195,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
         {onOpenLookup && (
           <button
             onClick={onOpenLookup}
-            className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg flex items-center gap-1.5 transition-colors border border-emerald-200 cursor-pointer"
+            className="px-3 py-1.5 text-xs font-extrabold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Tra cứu khách</span>
@@ -203,12 +203,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
         )}
 
         {/* Role Switcher Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
-          <UserCheck className="w-4 h-4 text-slate-500 ml-1.5" />
+        <div className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 p-1 rounded-xl border border-white/30 transition-colors">
+          <UserCheck className="w-4 h-4 text-amber-300 ml-1.5" />
           <select
             value={currentUser?.role || 'admin'}
             onChange={(e) => switchRole(e.target.value as UserRole)}
-            className="bg-transparent text-xs font-semibold text-slate-800 py-1 pr-6 pl-1 focus:outline-hidden cursor-pointer"
+            className="bg-transparent text-xs font-bold text-white py-1 pr-6 pl-1 focus:outline-hidden cursor-pointer [&>option]:text-slate-900"
           >
             <option value="admin">Admin (Toàn quyền)</option>
             <option value="manager">Quản lý (Manager)</option>
@@ -221,26 +221,26 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
         <button
           onClick={() => setShowLogoutModal(true)}
           title="Đăng xuất khỏi hệ thống"
-          className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+          className="px-2.5 py-1.5 text-xs font-bold text-white bg-rose-500 hover:bg-rose-400 border border-rose-300/40 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Đăng xuất</span>
         </button>
 
         {/* User Avatar & Name with Dropdown Menu */}
-        <div className="relative pl-1 border-l border-slate-200">
+        <div className="relative pl-1.5 border-l border-white/25">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition-colors text-left cursor-pointer"
+            className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-white/15 transition-colors text-left cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+            <div className="w-8 h-8 rounded-full bg-amber-300 text-slate-950 font-extrabold flex items-center justify-center text-xs shadow-sm">
               {currentUser?.full_name?.charAt(0) || 'U'}
             </div>
             <div className="hidden lg:block text-left">
-              <p className="text-xs font-bold text-slate-800 leading-none">{currentUser?.full_name}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5 capitalize">{currentUser?.role}</p>
+              <p className="text-xs font-bold text-white leading-none">{currentUser?.full_name}</p>
+              <p className="text-[10px] text-sky-100 mt-0.5 capitalize">{currentUser?.role}</p>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronDown className="w-3.5 h-3.5 text-sky-100" />
           </button>
 
           {/* User Menu Dropdown */}
