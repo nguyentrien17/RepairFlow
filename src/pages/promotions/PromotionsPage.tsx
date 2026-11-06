@@ -90,7 +90,9 @@ export const PromotionsPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSavePromo = (e: React.FormEvent) => {
+  const [isSavingPromo, setIsSavingPromo] = useState(false);
+
+  const handleSavePromo = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = code.trim().toUpperCase();
 
@@ -119,9 +121,10 @@ export const PromotionsPage: React.FC = () => {
       return;
     }
 
+    setIsSavingPromo(true);
     try {
       if (editingPromo) {
-        StorageService.updatePromotion(editingPromo.id, {
+        await StorageService.updatePromotionAsync(editingPromo.id, {
           code: cleanCode,
           name: name.trim(),
           description: description.trim() || undefined,
@@ -137,7 +140,7 @@ export const PromotionsPage: React.FC = () => {
         });
         showToast(`Đã cập nhật mã ưu đãi ${cleanCode} thành công!`, 'success');
       } else {
-        StorageService.addPromotion({
+        await StorageService.addPromotionAsync({
           code: cleanCode,
           name: name.trim(),
           description: description.trim() || undefined,
@@ -157,26 +160,36 @@ export const PromotionsPage: React.FC = () => {
       setIsModalOpen(false);
       reloadPromotions();
     } catch (err: any) {
-      showToast(err.message || 'Lỗi khi lưu mã ưu đãi', 'error');
+      showToast(err?.message || 'Lỗi khi lưu mã ưu đãi', 'error');
+    } finally {
+      setIsSavingPromo(false);
     }
   };
 
-  const handleToggleActive = (p: Promotion) => {
-    const updated = StorageService.updatePromotion(p.id, { is_active: !p.is_active });
-    showToast(
-      updated.is_active
-        ? `Đã kích hoạt chương trình ưu đãi ${p.code}!`
-        : `Đã tạm dừng chương trình ưu đãi ${p.code}!`,
-      'info'
-    );
-    reloadPromotions();
+  const handleToggleActive = async (p: Promotion) => {
+    try {
+      const updated = await StorageService.updatePromotionAsync(p.id, { is_active: !p.is_active });
+      showToast(
+        updated.is_active
+          ? `Đã kích hoạt chương trình ưu đãi ${p.code}!`
+          : `Đã tạm dừng chương trình ưu đãi ${p.code}!`,
+        'info'
+      );
+      reloadPromotions();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể cập nhật trạng thái ưu đãi!', 'error');
+    }
   };
 
-  const handleDelete = (p: Promotion) => {
+  const handleDelete = async (p: Promotion) => {
     if (window.confirm(`Bạn có chắc chắn muốn xóa mã ưu đãi "${p.code}" - ${p.name}?`)) {
-      StorageService.deletePromotion(p.id);
-      showToast(`Đã xóa mã ưu đãi ${p.code}!`, 'success');
-      reloadPromotions();
+      try {
+        await StorageService.deletePromotionAsync(p.id);
+        showToast(`Đã xóa mã ưu đãi ${p.code}!`, 'success');
+        reloadPromotions();
+      } catch (err: any) {
+        showToast(err?.message || 'Không thể xóa mã ưu đãi!', 'error');
+      }
     }
   };
 
@@ -215,7 +228,7 @@ export const PromotionsPage: React.FC = () => {
   const totalDiscountGranted = tickets.reduce((acc, t) => acc + (t.discount_amount || 0), 0);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 w-full pb-12">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -736,9 +749,10 @@ export const PromotionsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
+                  disabled={isSavingPromo}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  {editingPromo ? 'Lưu thay đổi' : 'Tạo mã ưu đãi'}
+                  {isSavingPromo ? 'Đang lưu...' : editingPromo ? 'Lưu thay đổi' : 'Tạo mã ưu đãi'}
                 </button>
               </div>
             </form>

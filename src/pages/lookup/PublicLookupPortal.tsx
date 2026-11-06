@@ -1,66 +1,106 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../../services/mockStorage';
-import { RepairTicket, RepairQuote } from '../../types';
-import { formatVND, formatDateTime, formatDate, STATUS_CONFIG, getVietQRUrl } from '../../utils/formatters';
+import { ApiClient } from '../../services/apiClient';
+import { RepairTicket, RepairQuote, StoreSettings } from '../../types';
+import { formatVND, formatDateTime, STATUS_CONFIG, getVietQRUrl } from '../../utils/formatters';
 import {
   Search,
   Wrench,
-  CheckCircle2,
   Clock,
-  ShieldCheck,
   Check,
-  X,
-  CreditCard,
-  QrCode,
-  ArrowRight,
+  Phone,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 
 export const PublicLookupPortal: React.FC = () => {
   const [ticketCodeInput, setTicketCodeInput] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
   const [ticket, setTicket] = useState<RepairTicket | null>(null);
   const [quote, setQuote] = useState<RepairQuote | null>(null);
+  const [storeInfo, setStoreInfo] = useState<StoreSettings>(() => StorageService.getSettings());
   const [hasSearched, setHasSearched] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const { showToast } = useToast();
-
-  const settings = StorageService.getSettings();
 
   // Check URL query parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('ticket');
+    const phone = params.get('phone');
     if (code) {
       setTicketCodeInput(code);
-      doLookup(code);
+    }
+    if (phone) {
+      setPhoneInput(phone);
+    }
+    if (code && phone) {
+      doLookup(code, phone);
     }
   }, []);
 
-  const doLookup = (code: string) => {
-    if (!code.trim()) return;
-    setHasSearched(true);
-    const found = StorageService.getTicketByCode(code.trim());
-    if (found) {
-      setTicket(found);
-      const quotes = StorageService.getQuotes(found.id);
-      setQuote(quotes[0] || null);
-    } else {
+  // P1-8: Dedicated Public Lookup API with Phone Last-4-Digit Verification
+  const doLookup = async (code: string, phone: string) => {
+    const cleanCode = code.trim();
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanCode) return;
+    if (cleanPhone.length < 4) {
+      setErrorMsg('Vui lòng nhập ít nhất 4 số cuối số điện thoại đăng ký trên phiếu.');
+      setHasSearched(true);
       setTicket(null);
       setQuote(null);
+      return;
+    }
+
+    setIsSearching(true);
+    setHasSearched(true);
+    setErrorMsg('');
+
+    try {
+      const data = await ApiClient.requestStrict<{
+        ticket: any;
+        quotes: RepairQuote[];
+        store: StoreSettings | null;
+      }>(`/public/tickets/${encodeURIComponent(cleanCode)}?phone=${encodeURIComponent(cleanPhone)}`);
+
+      setTicket({
+        ...data.ticket,
+        customer_phone: data.ticket.customer_phone_masked || '',
+      });
+      setQuote(data.quotes?.[0] || null);
+      if (data.store) {
+        setStoreInfo(data.store);
+      }
+    } catch (err: any) {
+      setTicket(null);
+      setQuote(null);
+      setErrorMsg(err?.message || 'Không tìm thấy phiếu sửa chữa hoặc số điện thoại xác thực không khớp.');
+    } finally {
+      setIsSearching(false);
     }
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    doLookup(ticketCodeInput);
+    doLookup(ticketCodeInput, phoneInput);
   };
 
-  // Online Quote Approval by Customer (UC-25)
-  const handleCustomerApproveQuote = () => {
+  // Online Quote Approval by Customer (UC-25, P1-8)
+  const handleCustomerApproveQuote = async () => {
     if (!ticket || !quote) return;
-    StorageService.updateQuoteStatus(quote.id, 'Approved', 'Khách hàng (Xác nhận trực tuyến qua QR Portal)');
-    StorageService.updateTicket(ticket.id, { status: 'In_Progress' });
-    showToast('Quý khách đã xác nhận duyệt báo giá thành công! Kỹ thuật viên sẽ tiến hành sửa chữa.', 'success');
-    doLookup(ticket.ticket_code);
+    try {
+      await ApiClient.requestStrict(`/public/quotes/${quote.id}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'Approve',
+          phone: phoneInput,
+        }),
+      });
+      showToast('Quý khách đã xác nhận duyệt báo giá thành công! Kỹ thuật viên sẽ tiến hành sửa chữa.', 'success');
+      doLookup(ticket.ticket_code, phoneInput);
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể xác nhận báo giá trực tuyến!', 'error');
+    }
   };
 
   const statusConf = ticket ? STATUS_CONFIG[ticket.status] : null;
@@ -74,38 +114,68 @@ export const PublicLookupPortal: React.FC = () => {
         </div>
         <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">CỔNG TRA CỨU TIẾN ĐỘ SỬA CHỮA</h2>
         <p className="text-xs text-slate-500 max-w-md mx-auto">
-          {settings.store_name} — Nhập mã phiếu sửa chữa ghi trên phiếu nhận để kiểm tra tiến trình theo thời gian thực.
+          {storeInfo.store_name} — Nhập mã phiếu sửa chữa và 4 số cuối số điện thoại để kiểm tra tiến trình theo thời gian thực.
         </p>
       </div>
 
       {/* Lookup Search Card */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-md">
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <div className="relative flex-1">
+        <form onSubmit={handleSearch} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+          <div className="relative sm:col-span-6">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               required
-              placeholder="Nhập mã phiếu (Ví dụ: SC-20261102-0001)"
+              placeholder="Mã phiếu (VD: SC-20261102-0001)"
               value={ticketCodeInput}
               onChange={(e) => setTicketCodeInput(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:bg-white focus:border-indigo-600 focus:outline-hidden"
             />
           </div>
+          <div className="relative sm:col-span-4">
+            <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              required
+              placeholder="4 số cuối SĐT (VD: 4321)"
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:bg-white focus:border-indigo-600 focus:outline-hidden"
+            />
+          </div>
           <button
             type="submit"
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer"
+            disabled={isSearching}
+            className="sm:col-span-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
           >
-            Tra cứu
+            {isSearching ? 'Đang tìm...' : 'Tra cứu'}
           </button>
         </form>
+        <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400">
+          <span>Ví dụ mẫu: Mã <strong className="font-mono text-slate-600">SC-20261102-0001</strong> — SĐT <strong className="font-mono text-slate-600">4321</strong></span>
+          <button
+            type="button"
+            onClick={() => {
+              setTicketCodeInput('SC-20261102-0001');
+              setPhoneInput('4321');
+              doLookup('SC-20261102-0001', '4321');
+            }}
+            className="text-indigo-600 hover:underline font-semibold cursor-pointer"
+          >
+            Thử mã phiếu mẫu
+          </button>
+        </div>
       </div>
 
       {/* Result Display */}
-      {hasSearched && !ticket && (
+      {hasSearched && !ticket && !isSearching && (
         <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-xs">
-          <p className="font-bold text-slate-800 text-sm">Không tìm thấy thông tin phiếu sửa chữa này!</p>
-          <p className="text-xs text-slate-500 mt-1">Quý khách vui lòng kiểm tra lại mã số in trên phiếu hoặc liên hệ hotline: {settings.phone}</p>
+          <p className="font-bold text-slate-800 text-sm">
+            {errorMsg || 'Không tìm thấy thông tin phiếu sửa chữa này!'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Quý khách vui lòng kiểm tra lại mã số in trên phiếu và 4 số cuối số điện thoại hoặc liên hệ hotline: {storeInfo.phone}
+          </p>
         </div>
       )}
 
@@ -214,15 +284,15 @@ export const PublicLookupPortal: React.FC = () => {
             {ticket.debt_amount > 0 && (
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4 text-xs">
                 <img
-                  src={getVietQRUrl(settings.bank_name, settings.bank_account_no, settings.bank_account_name, ticket.debt_amount, ticket.ticket_code)}
+                  src={getVietQRUrl(storeInfo.bank_name, storeInfo.bank_account_no, storeInfo.bank_account_name, ticket.debt_amount, ticket.ticket_code)}
                   alt="VietQR"
                   className="w-32 h-32 rounded-lg border border-slate-200 p-1 bg-white"
                 />
                 <div className="space-y-1 text-slate-700 flex-1">
                   <p className="font-bold text-slate-900">Quét mã VietQR chuyển khoản thanh toán từ xa:</p>
-                  <p>Ngân hàng: <strong>{settings.bank_name}</strong></p>
-                  <p>Số tài khoản: <strong className="font-mono text-indigo-700">{settings.bank_account_no}</strong></p>
-                  <p>Chủ TK: <strong>{settings.bank_account_name}</strong></p>
+                  <p>Ngân hàng: <strong>{storeInfo.bank_name}</strong></p>
+                  <p>Số tài khoản: <strong className="font-mono text-indigo-700">{storeInfo.bank_account_no}</strong></p>
+                  <p>Chủ TK: <strong>{storeInfo.bank_account_name}</strong></p>
                   <p>Nội dung CK: <strong className="font-mono">{ticket.ticket_code}</strong></p>
                 </div>
               </div>

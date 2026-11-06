@@ -22,11 +22,12 @@ const KANBAN_COLUMNS: { status: RepairStatus; label: string }[] = [
 
 export const KanbanPage: React.FC<KanbanPageProps> = ({ onSelectTicket }) => {
   const [tickets, setTickets] = useState<RepairTicket[]>(() => StorageService.getTickets());
+  const [movingTicketId, setMovingTicketId] = useState<number | null>(null);
   const { showToast } = useToast();
 
   const reload = () => setTickets(StorageService.getTickets());
 
-  const handleMoveStatus = (ticketId: number, currentStatus: RepairStatus, direction: 'next' | 'prev') => {
+  const handleMoveStatus = async (ticketId: number, currentStatus: RepairStatus, direction: 'next' | 'prev') => {
     const colIndex = KANBAN_COLUMNS.findIndex((c) => c.status === currentStatus);
     if (colIndex === -1) return;
 
@@ -34,9 +35,16 @@ export const KanbanPage: React.FC<KanbanPageProps> = ({ onSelectTicket }) => {
     if (newIndex < 0 || newIndex >= KANBAN_COLUMNS.length) return;
 
     const targetStatus = KANBAN_COLUMNS[newIndex].status;
-    StorageService.updateTicket(ticketId, { status: targetStatus });
-    showToast(`Đã chuyển sang ${STATUS_CONFIG[targetStatus].label}`, 'success');
-    reload();
+    setMovingTicketId(ticketId);
+    try {
+      await StorageService.transitionTicketAsync(ticketId, targetStatus);
+      showToast(`Đã chuyển sang ${STATUS_CONFIG[targetStatus].label}`, 'success');
+      reload();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể chuyển trạng thái phiếu sửa chữa!', 'error');
+    } finally {
+      setMovingTicketId(null);
+    }
   };
 
   return (
@@ -109,7 +117,7 @@ export const KanbanPage: React.FC<KanbanPageProps> = ({ onSelectTicket }) => {
                         {/* Move Actions */}
                         <div className="flex items-center justify-between pt-1">
                           <button
-                            disabled={idx === 0}
+                            disabled={idx === 0 || movingTicketId === t.id}
                             onClick={() => handleMoveStatus(t.id, t.status, 'prev')}
                             title="Lùi trạng thái"
                             className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded hover:bg-slate-100"
@@ -125,7 +133,7 @@ export const KanbanPage: React.FC<KanbanPageProps> = ({ onSelectTicket }) => {
                           </button>
 
                           <button
-                            disabled={idx === KANBAN_COLUMNS.length - 1}
+                            disabled={idx === KANBAN_COLUMNS.length - 1 || movingTicketId === t.id}
                             onClick={() => handleMoveStatus(t.id, t.status, 'next')}
                             title="Tiến trạng thái"
                             className="p-1 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 rounded hover:bg-indigo-50"

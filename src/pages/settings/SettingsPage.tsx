@@ -6,16 +6,25 @@ import { useToast } from '../../contexts/ToastContext';
 
 export const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<StoreSettings>(() => StorageService.getSettings());
+  const [isSaving, setIsSaving] = useState(false);
   const { showToast } = useToast();
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    StorageService.saveSettings(settings);
-    showToast('Đã lưu cấu hình cửa hàng thành công!', 'success');
+    setIsSaving(true);
+    try {
+      const updated = await StorageService.saveSettingsAsync(settings);
+      setSettings(updated);
+      showToast('Đã lưu cấu hình cửa hàng thành công!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể lưu cấu hình cửa hàng!', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="w-full space-y-6 pb-12">
       <div>
         <h2 className="text-xl font-bold text-slate-900">Cấu hình thông tin cửa hàng & Mẫu in (UC-04, UC-33)</h2>
         <p className="text-xs text-slate-500 mt-0.5">Tùy chỉnh thông tin thương hiệu, tài khoản nhận chuyển khoản VietQR và điều khoản in phiếu.</p>
@@ -294,9 +303,10 @@ export const SettingsPage: React.FC = () => {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer"
+            disabled={isSaving}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
           >
-            <Save className="w-4 h-4" /> Lưu thay đổi cấu hình
+            <Save className="w-4 h-4" /> {isSaving ? 'Đang lưu cấu hình...' : 'Lưu thay đổi cấu hình'}
           </button>
         </div>
       </form>

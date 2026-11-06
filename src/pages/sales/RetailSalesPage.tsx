@@ -79,12 +79,12 @@ export const RetailSalesPage: React.FC = () => {
   // Cart Items State
   const [cartItems, setCartItems] = useState<
     {
-      part_id: number;
+      part_id?: number;
       batch_id?: number;
       batch_code?: string;
       product_name: string;
       sku: string;
-      item_type: 'part' | 'device' | 'accessory';
+      item_type: 'part' | 'device' | 'accessory' | 'custom';
       quantity: number;
       max_stock: number;
       cost_price: number;
@@ -256,6 +256,7 @@ export const RetailSalesPage: React.FC = () => {
 
   // Add Custom Item (Pre-owned device / custom item)
   const handleAddCustomItem = (customItem: CustomSaleItem) => {
+    setParts(StorageService.getParts());
     setCartItems((prev) => [
       ...prev,
       {
@@ -376,46 +377,49 @@ export const RetailSalesPage: React.FC = () => {
     });
   };
 
-  // Step 2: User clicks "Xác nhận & In hóa đơn" in the preview modal -> NOW finalize & deduct inventory
-  const handleConfirmCompleteOrder = () => {
+  // Step 2: User clicks "Xác nhận & In hóa đơn" in the preview modal -> NOW finalize & deduct inventory on server
+  const handleConfirmCompleteOrder = async () => {
     if (!pendingOrder) return;
 
-    let customerId = pendingOrder.customer_id;
-    // If walk-in, save customer record now
-    if (isWalkIn) {
-      const createdCustomer = StorageService.addCustomer({
-        name: pendingOrder.customer_name,
-        phone: pendingOrder.customer_phone,
-        customer_type: 'individual',
-        current_debt: 0,
+    try {
+      let customerId = pendingOrder.customer_id;
+      if (isWalkIn) {
+        const createdCustomer = await StorageService.addCustomerAsync({
+          name: pendingOrder.customer_name,
+          phone: pendingOrder.customer_phone,
+          customer_type: 'individual',
+          current_debt: 0,
+        });
+        customerId = createdCustomer.id;
+        setCustomersList(StorageService.getCustomers());
+      }
+
+      const finalizedOrder = await StorageService.createRetailOrderAsync({
+        ...pendingOrder,
+        customer_id: customerId,
       });
-      customerId = createdCustomer.id;
-      setCustomersList(StorageService.getCustomers());
+
+      showToast(`Đã xác nhận & hoàn thành đơn hàng ${finalizedOrder.order_code}!`, 'success');
+
+      // Reset Form
+      setCartItems([]);
+      setDiscountAmount(0);
+      setAppliedPromo('');
+      setPromoCodeInput('');
+      setPaidAmountInput('');
+      setOrderNotes('');
+      setEnableTradeIn(false);
+      setTradeInDeviceName('');
+      setTradeInSerial('');
+      setTradeInAllowance('');
+      setParts(StorageService.getParts());
+      setOrdersHistory(StorageService.getRetailOrders());
+
+      // Close preview modal
+      setPendingOrder(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể hoàn thành đơn hàng. Vui lòng thử lại!', 'error');
     }
-
-    const finalizedOrder = StorageService.createRetailOrder({
-      ...pendingOrder,
-      customer_id: customerId,
-    });
-
-    showToast(`Đã xác nhận & hoàn thành đơn hàng ${finalizedOrder.order_code}!`, 'success');
-
-    // Reset Form
-    setCartItems([]);
-    setDiscountAmount(0);
-    setAppliedPromo('');
-    setPromoCodeInput('');
-    setPaidAmountInput('');
-    setOrderNotes('');
-    setEnableTradeIn(false);
-    setTradeInDeviceName('');
-    setTradeInSerial('');
-    setTradeInAllowance('');
-    setParts(StorageService.getParts());
-    setOrdersHistory(StorageService.getRetailOrders());
-
-    // Close preview modal
-    setPendingOrder(null);
   };
 
   // Filtered History

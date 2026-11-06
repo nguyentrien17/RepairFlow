@@ -28,7 +28,7 @@ export const QuickAddCustomerModal: React.FC<QuickAddCustomerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!name.trim()) {
@@ -48,7 +48,7 @@ export const QuickAddCustomerModal: React.FC<QuickAddCustomerModalProps> = ({
     }
 
     try {
-      const newCustomer = StorageService.addCustomer({
+      const newCustomer = await StorageService.addCustomerAsync({
         name: name.trim(),
         phone: phone.trim(),
         email: email.trim() || undefined,
@@ -59,7 +59,7 @@ export const QuickAddCustomerModal: React.FC<QuickAddCustomerModalProps> = ({
         current_debt: 0,
       });
 
-      showToast(`Đã thêm mới khách hàng "${newCustomer.name}" thành công!`, 'success');
+      showToast(`Đã thêm mới khách hàng "${newCustomer.name}" (${newCustomer.code}) thành công!`, 'success');
       onCustomerCreated(newCustomer);
       onClose();
 

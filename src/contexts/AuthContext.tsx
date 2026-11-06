@@ -1,17 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
-import { StorageService, INITIAL_USERS } from '../services/mockStorage';
+import { StorageService } from '../services/mockStorage';
+import { ApiClient } from '../services/apiClient';
 
 interface AuthContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
-  switchRole: (role: UserRole) => void;
+  switchRole: (role: UserRole) => Promise<void>;
   allUsers: User[];
   hasRole: (roles: UserRole[]) => boolean;
-  logout: () => void;
-  login: (usernameOrEmail: string, password?: string) => { success: boolean; message?: string };
-  updateProfile: (data: Partial<User>) => { success: boolean; message: string };
-  changePassword: (oldPassword: string, newPassword: string) => { success: boolean; message: string };
+  logout: () => Promise<void>;
+  login: (usernameOrEmail: string, password?: string) => Promise<{ success: boolean; message?: string }>;
+  updateProfile: (data: Partial<User>) => Promise<{ success: boolean; message: string }>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   refreshUsers: () => void;
 }
 
@@ -23,8 +24,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const saved = localStorage.getItem('repairflow_auth_user');
       if (saved) return JSON.parse(saved);
     } catch {}
-    // Default to admin for convenient testing
-    return INITIAL_USERS[0];
+    return null;
   });
 
   const [allUsers, setAllUsers] = useState<User[]>(() => StorageService.getUsers());
@@ -41,94 +41,141 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
-  const switchRole = (role: UserRole) => {
-    const users = StorageService.getUsers();
-    const user = users.find((u) => u.role === role) || users[0];
-    setCurrentUser(user);
-    setAllUsers(users);
+  // Listen for 401 unauthorized events & backend hydration events
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setCurrentUser(null);
+    };
+    const handleHydrated = () => {
+      setAllUsers(StorageService.getUsers());
+    };
+
+    window.addEventListener('repairflow_unauthorized', handleUnauthorized);
+    window.addEventListener('repairflow_sql_hydrated', handleHydrated);
+    return () => {
+      window.removeEventListener('repairflow_unauthorized', handleUnauthorized);
+      window.removeEventListener('repairflow_sql_hydrated', handleHydrated);
+    };
+  }, []);
+
+  // Verify httpOnly cookie session & hydrate data on initial mount
+  useEffect(() => {
+    const saved = localStorage.getItem('repairflow_auth_user');
+    if (!saved) return;
+
+    ApiClient.requestStrict<{ user: User }>('/auth/me')
+      .then(async (res) => {
+        if (res?.user) {
+          setCurrentUser(res.user);
+          if (!res.user.must_change_password) {
+            await StorageService.syncFromBackend();
+            setAllUsers(StorageService.getUsers());
+          }
+        }
+      })
+      .catch(() => {
+        setCurrentUser(null);
+      });
+  }, []);
+
+  const switchRole = async (role: UserRole) => {
+    try {
+      const res = await ApiClient.requestStrict<{ user: User }>('/auth/dev-switch-role', {
+        method: 'POST',
+        body: JSON.stringify({ role }),
+      });
+      if (res?.user) {
+        setCurrentUser(res.user);
+        await StorageService.syncFromBackend();
+        setAllUsers(StorageService.getUsers());
+      }
+    } catch (err: any) {
+      console.warn('[AuthContext] Cannot switch role:', err?.message);
+    }
   };
 
   const hasRole = (roles: UserRole[]) => {
     if (!currentUser) return false;
-    if (currentUser.role === 'admin') return true; // Admin has all rights
+    if (currentUser.role === 'admin') return true;
     return roles.includes(currentUser.role);
   };
 
-  const login = (usernameOrEmail: string, password?: string): { success: boolean; message?: string } => {
-    const cleanInput = usernameOrEmail.trim().toLowerCase();
-    const users = StorageService.getUsers();
-    const user = users.find(
-      (u) => u.username.toLowerCase() === cleanInput || u.email.toLowerCase() === cleanInput
-    );
+  // Server-side password verification & httpOnly cookie issuance
+  const login = async (
+    usernameOrEmail: string,
+    password?: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await ApiClient.requestStrict<{ user: User }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: usernameOrEmail.trim(),
+          password: password || '',
+        }),
+      });
 
-    if (!user) {
-      return {
-        success: false,
-        message: 'Tài khoản hoặc email không tồn tại trong hệ thống!',
-      };
-    }
-
-    if (!user.is_active) {
-      return {
-        success: false,
-        message: 'Tài khoản này đã bị tạm khóa. Vui lòng liên hệ Quản trị viên để mở khóa!',
-      };
-    }
-
-    // Check password if provided
-    if (password !== undefined && password !== '') {
-      const userPass = user.password || (user.username === 'admin' ? 'admin' : '123');
-      if (userPass !== password && password !== '123456' && password !== 'admin') {
-        return {
-          success: false,
-          message: 'Mật khẩu không đúng. Vui lòng kiểm tra lại!',
-        };
+      setCurrentUser(res.user);
+      if (!res.user.must_change_password) {
+        await StorageService.syncFromBackend();
+        setAllUsers(StorageService.getUsers());
       }
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản và mật khẩu!',
+      };
     }
-
-    const now = new Date().toISOString();
-    const updatedUser = { ...user, last_login_at: now };
-    StorageService.updateUser(user.id, { last_login_at: now });
-    setCurrentUser(updatedUser);
-    setAllUsers(StorageService.getUsers());
-    StorageService.addAuditLog('LOGIN', 'users', user.username, `Người dùng ${user.full_name} (${user.role}) đăng nhập thành công`);
-
-    return { success: true };
   };
 
-  const updateProfile = (data: Partial<User>): { success: boolean; message: string } => {
+  const updateProfile = async (data: Partial<User>): Promise<{ success: boolean; message: string }> => {
     if (!currentUser) return { success: false, message: 'Chưa đăng nhập' };
-    const updated = StorageService.updateUser(currentUser.id, data);
-    if (!updated) return { success: false, message: 'Cập nhật thất bại' };
-    setCurrentUser(updated);
-    setAllUsers(StorageService.getUsers());
-    StorageService.addAuditLog('UPDATE_PROFILE', 'users', currentUser.username, `Cập nhật thông tin cá nhân: ${updated.full_name}`);
-    return { success: true, message: 'Cập nhật thông tin thành công!' };
-  };
-
-  const changePassword = (oldPassword: string, newPassword: string): { success: boolean; message: string } => {
-    if (!currentUser) return { success: false, message: 'Chưa đăng nhập' };
-    const currentPass = currentUser.password || (currentUser.username === 'admin' ? 'admin' : '123');
-    if (oldPassword !== currentPass && oldPassword !== '123456' && oldPassword !== 'admin') {
-      return { success: false, message: 'Mật khẩu hiện tại không đúng!' };
-    }
-    if (!newPassword || newPassword.length < 3) {
-      return { success: false, message: 'Mật khẩu mới phải có ít nhất 3 ký tự!' };
-    }
-    const updated = StorageService.updateUser(currentUser.id, { password: newPassword });
-    if (updated) {
-      setCurrentUser(updated);
+    try {
+      const res = await ApiClient.requestStrict<{ user: User }>('/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          full_name: data.full_name,
+          phone: data.phone,
+          email: data.email,
+          avatar_url: data.avatar_url,
+        }),
+      });
+      setCurrentUser(res.user);
+      StorageService.updateUserLocalOnly(res.user);
       setAllUsers(StorageService.getUsers());
-      StorageService.addAuditLog('CHANGE_PASSWORD', 'users', currentUser.username, `Đổi mật khẩu tài khoản thành công`);
-      return { success: true, message: 'Đổi mật khẩu thành công!' };
+      return { success: true, message: 'Cập nhật thông tin thành công!' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Cập nhật thông tin thất bại!' };
     }
-    return { success: false, message: 'Không thể cập nhật mật khẩu!' };
   };
 
-  const logout = () => {
-    if (currentUser) {
-      StorageService.addAuditLog('LOGOUT', 'users', currentUser.username, `Người dùng ${currentUser.full_name} đã đăng xuất`);
+  const changePassword = async (
+    oldPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!currentUser) return { success: false, message: 'Chưa đăng nhập' };
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, message: 'Mật khẩu mới phải có ít nhất 6 ký tự!' };
     }
+    try {
+      const res = await ApiClient.requestStrict<{ ok: boolean; message: string }>('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ oldPassword, newPassword }),
+      });
+      const updatedUser = { ...currentUser, must_change_password: false };
+      setCurrentUser(updatedUser);
+      await StorageService.syncFromBackend();
+      setAllUsers(StorageService.getUsers());
+      return { success: true, message: res.message || 'Đổi mật khẩu thành công!' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Không thể cập nhật mật khẩu!' };
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await ApiClient.post('/auth/logout', {});
+    } catch {}
     setCurrentUser(null);
   };
 

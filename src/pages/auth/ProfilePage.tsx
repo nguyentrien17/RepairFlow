@@ -135,7 +135,7 @@ export const ProfilePage: React.FC = () => {
     desc: 'Tài khoản nhân viên',
   };
 
-  const handleUpdateInfo = (e: React.FormEvent) => {
+  const handleUpdateInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) {
       showToast('Vui lòng nhập họ và tên!', 'error');
@@ -147,23 +147,23 @@ export const ProfilePage: React.FC = () => {
     }
 
     setIsSavingInfo(true);
-    setTimeout(() => {
-      const res = updateProfile({
+    try {
+      const res = await updateProfile({
         full_name: fullName.trim(),
         email: email.trim(),
         phone: phone.trim(),
       });
-      setIsSavingInfo(false);
-
       if (res.success) {
         showToast('Cập nhật hồ sơ thành công!', 'success');
       } else {
         showToast(res.message || 'Cập nhật thất bại', 'error');
       }
-    }, 200);
+    } finally {
+      setIsSavingInfo(false);
+    }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!currentPassword) {
@@ -171,8 +171,8 @@ export const ProfilePage: React.FC = () => {
       return;
     }
 
-    if (newPassword.length < 3) {
-      showToast('Mật khẩu mới phải có ít nhất 3 ký tự!', 'error');
+    if (newPassword.length < 6) {
+      showToast('Mật khẩu mới phải có ít nhất 6 ký tự!', 'error');
       return;
     }
 
@@ -182,10 +182,8 @@ export const ProfilePage: React.FC = () => {
     }
 
     setIsSavingPassword(true);
-    setTimeout(() => {
-      const res = changePassword(currentPassword, newPassword);
-      setIsSavingPassword(false);
-
+    try {
+      const res = await changePassword(currentPassword, newPassword);
       if (res.success) {
         showToast('Đổi mật khẩu thành công!', 'success');
         setCurrentPassword('');
@@ -194,7 +192,9 @@ export const ProfilePage: React.FC = () => {
       } else {
         showToast(res.message || 'Không thể đổi mật khẩu', 'error');
       }
-    }, 250);
+    } finally {
+      setIsSavingPassword(false);
+    }
   };
 
   // Get user's activity audit logs
@@ -207,7 +207,7 @@ export const ProfilePage: React.FC = () => {
   ).slice(0, 15);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 w-full pb-12">
       {/* Top Profile Header Banner */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="h-32 bg-gradient-to-r from-indigo-700 via-indigo-600 to-purple-700 relative p-6 flex justify-between items-start">

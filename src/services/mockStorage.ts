@@ -25,6 +25,7 @@ import {
   RetailSaleOrder,
   RetailSaleOrderItem,
 } from '../types';
+import { ApiClient } from './apiClient';
 
 const STORAGE_KEY_PREFIX = 'repairflow_';
 
@@ -36,7 +37,6 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Nguyễn Triển (Admin)',
     phone: '0901234567',
     role: 'admin',
-    password: 'admin',
     is_active: true,
     created_at: '2026-01-01T08:00:00Z',
     last_login_at: '2026-11-03T07:30:00Z',
@@ -48,7 +48,6 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Nguyễn Văn Quản (Quản lý)',
     phone: '0912345678',
     role: 'manager',
-    password: '123',
     is_active: true,
     created_at: '2026-01-05T08:00:00Z',
   },
@@ -59,7 +58,6 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Trần Thị Thu Hà (Lễ tân & Thu ngân)',
     phone: '0923456789',
     role: 'receptionist',
-    password: '123',
     is_active: true,
     created_at: '2026-01-10T08:00:00Z',
   },
@@ -70,7 +68,6 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Lê Hoàng Nam (Kỹ thuật viên Trưởng)',
     phone: '0934567890',
     role: 'technician',
-    password: '123',
     is_active: true,
     created_at: '2026-01-15T08:00:00Z',
   },
@@ -81,7 +78,6 @@ export const INITIAL_USERS: User[] = [
     full_name: 'Phạm Minh Anh (Lễ tân & Thu ngân 2)',
     phone: '0945678901',
     role: 'receptionist',
-    password: '123',
     is_active: true,
     created_at: '2026-02-01T08:00:00Z',
   },
@@ -106,8 +102,6 @@ export const INITIAL_SETTINGS: StoreSettings = {
     '1. Bảo hành miễn phí các lỗi kỹ thuật và linh kiện đã thay thế trong thời hạn cam kết.\n2. Không bảo hành các trường hợp: Rơi vỡ, nứt cấn, ngấm nước, chập cháy do nguồn điện không ổn định hoặc tự ý tháo dỡ tem niêm phong.',
   auto_payment_enabled: true,
   payment_gateway_provider: 'sepay',
-  gateway_api_key: 'SP_LIVE_DEMO_KEY_98821102',
-  gateway_webhook_secret: 'whsec_repflow_secret_key_8899',
   pos_terminal_id: 'VNPAY_POS_Q1_01',
   pos_ip_address: '192.168.1.188:8080',
 };
@@ -476,7 +470,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     initial_condition: 'Mở nguồn lên được màn hình Dell nhưng quạt quay tối đa, nhiệt độ CPU báo 98 độ C.',
     cosmetic_condition: 'Ngoại quan còn đẹp, không nứt vỡ, trầy nhẹ viền cao su.',
     accessories_included: 'Củ sạc zin Type-C 130W, túi chống sốc Targus.',
-    device_password_hint: 'PIN: 9988',
+    has_device_password: true,
     estimated_completion: '2026-11-04T17:00:00Z',
     subtotal_amount: 1450000,
     discount_amount: 100000,
@@ -509,7 +503,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     initial_condition: 'Mở máy bình thường, Face ID hoạt động, sạc vào chậm.',
     cosmetic_condition: 'Kính lưng có 1 vết xước dăm nhỏ, viền thép bóng đẹp.',
     accessories_included: 'Chỉ nhận thân máy, không giữ phụ kiện.',
-    device_password_hint: 'Vẽ hình chữ Z (hoặc 112233)',
+    has_device_password: true,
     estimated_completion: '2026-11-05T12:00:00Z',
     subtotal_amount: 1450000,
     discount_amount: 0,
@@ -542,7 +536,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     initial_condition: 'Bàn phím rít, máy mở nguồn bình thường, màn hình đẹp.',
     cosmetic_condition: 'Vết trầy nhẹ đáy máy, màn hình sạch không trầy.',
     accessories_included: 'Sạc MagSafe 3 67W, cáp dù bọc đen.',
-    device_password_hint: 'macbook2021',
+    has_device_password: true,
     estimated_completion: '2026-11-02T18:00:00Z',
     subtotal_amount: 850000,
     discount_amount: 50000,
@@ -982,6 +976,9 @@ export const INITIAL_RETAIL_ORDERS: RetailSaleOrder[] = [
 
 // Helper functions for persistent LocalStorage
 function loadOrInit<T>(key: string, initialData: T): T {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return initialData;
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PREFIX + key);
     if (!raw) {
@@ -995,6 +992,9 @@ function loadOrInit<T>(key: string, initialData: T): T {
 }
 
 function save<T>(key: string, data: T): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return;
+  }
   try {
     localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(data));
   } catch (e) {
@@ -1025,36 +1025,111 @@ function cleanStatusText(text?: string): string {
   return res;
 }
 
+function getLocalIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export const StorageService = {
+  /**
+   * Hydrate Frontend cache from Node.js + MySQL Backend (/api/bootstrap)
+   */
+  async syncFromBackend(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const data = await ApiClient.request<any>('/bootstrap');
+    if (!data || !data.users) return false;
+
+    if (data.dbStatus) {
+      ApiClient.setStatus(data.dbStatus);
+    }
+
+    save('settings', data.settings);
+    save('users', data.users);
+    save('customers', data.customers);
+    save('categories', data.categories);
+    save('brands', data.brands);
+    save('devices', data.devices);
+    save('suppliers', data.suppliers);
+    save('parts', data.parts);
+    save('part_batches', data.part_batches);
+    save('promotions', data.promotions);
+    save('tickets', data.tickets);
+    save('histories', data.histories);
+    save('diagnostics', data.diagnostics);
+    save('quotes', data.quotes);
+    save('checklists', data.checklists);
+    save('part_usages', data.part_usages);
+    save('payments', data.payments);
+    save('warranties', data.warranties);
+    save('retail_orders', data.retail_orders);
+    save('audit_logs', data.audit_logs);
+
+    window.dispatchEvent(new CustomEvent('repairflow_sql_hydrated', { detail: data }));
+    return true;
+  },
+
+  /**
+   * Reconciles a mutation promise with the authoritative backend state.
+   * On success, applies any immediate ID/code callback and then refreshes from /api/bootstrap.
+   * On failure, refreshes from /api/bootstrap to roll back any stale local state.
+   */
+  reconcileWithServer<T = any>(promise: Promise<T | null>, onSuccess?: (res: T) => void): Promise<T | null> {
+    return promise
+      .then(async (res) => {
+        if (res && onSuccess) {
+          onSuccess(res);
+        }
+        await this.syncFromBackend();
+        return res;
+      })
+      .catch(async () => {
+        await this.syncFromBackend();
+        return null;
+      });
+  },
+
   // Reset all data to factory sample data
   resetToSampleData(): void {
-    save('users', INITIAL_USERS);
-    save('settings', INITIAL_SETTINGS);
-    save('customers', INITIAL_CUSTOMERS);
-    save('categories', INITIAL_CATEGORIES);
-    save('brands', INITIAL_BRANDS);
-    save('devices', INITIAL_DEVICES);
-    save('parts', INITIAL_PARTS);
-    save('suppliers', INITIAL_SUPPLIERS);
-    save('part_usages', INITIAL_PART_USAGES);
-    save('tickets', INITIAL_TICKETS);
-    save('histories', INITIAL_HISTORIES);
-    save('diagnostics', INITIAL_DIAGNOSTICS);
-    save('quotes', INITIAL_QUOTES);
-    save('checklists', INITIAL_CHECKLISTS);
-    save('payments', INITIAL_PAYMENTS);
-    save('warranties', INITIAL_WARRANTIES);
-    save('audit_logs', INITIAL_AUDIT_LOGS);
-    save('promotions', INITIAL_PROMOTIONS);
-    save('part_batches', INITIAL_BATCHES);
+    this.reconcileWithServer(ApiClient.post('/reset', {}), () => {
+      save('users', INITIAL_USERS);
+      save('settings', INITIAL_SETTINGS);
+      save('customers', INITIAL_CUSTOMERS);
+      save('categories', INITIAL_CATEGORIES);
+      save('brands', INITIAL_BRANDS);
+      save('devices', INITIAL_DEVICES);
+      save('parts', INITIAL_PARTS);
+      save('suppliers', INITIAL_SUPPLIERS);
+      save('part_usages', INITIAL_PART_USAGES);
+      save('tickets', INITIAL_TICKETS);
+      save('histories', INITIAL_HISTORIES);
+      save('diagnostics', INITIAL_DIAGNOSTICS);
+      save('quotes', INITIAL_QUOTES);
+      save('checklists', INITIAL_CHECKLISTS);
+      save('payments', INITIAL_PAYMENTS);
+      save('warranties', INITIAL_WARRANTIES);
+      save('audit_logs', INITIAL_AUDIT_LOGS);
+      save('promotions', INITIAL_PROMOTIONS);
+      save('part_batches', INITIAL_BATCHES);
+      save('retail_orders', INITIAL_RETAIL_ORDERS);
+    });
   },
 
   // Settings
   getSettings(): StoreSettings {
     return loadOrInit('settings', INITIAL_SETTINGS);
   },
-  saveSettings(settings: StoreSettings): void {
-    save('settings', settings);
+  async saveSettingsAsync(settings: StoreSettings): Promise<StoreSettings> {
+    const res = await ApiClient.requestStrict<StoreSettings>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+    const updated = { ...settings, ...(res || {}) };
+    save('settings', updated);
+    await this.syncFromBackend();
+    return this.getSettings();
   },
 
   // Users
@@ -1067,58 +1142,78 @@ export const StorageService = {
   saveUsers(users: User[]): void {
     save('users', users);
   },
-  updateUser(id: number, data: Partial<User>): User | undefined {
+  saveUsersLocalOnly(users: User[]): void {
+    save('users', users);
+  },
+  updateUserLocalOnly(user: User): void {
     const list = this.getUsers();
-    const idx = list.findIndex((u) => u.id === id);
-    if (idx === -1) return undefined;
-    list[idx] = { ...list[idx], ...data };
-    this.saveUsers(list);
-    return list[idx];
+    const idx = list.findIndex((u) => u.id === user.id);
+    if (idx !== -1) {
+      list[idx] = user;
+      save('users', list);
+    }
+  },
+  async updateUserAsync(id: number, data: Partial<User>): Promise<User> {
+    const res = await ApiClient.requestStrict<{ user?: User } & Partial<User>>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    const updatedUser = (res?.user || res) as User;
+    await this.syncFromBackend();
+    return this.getUserById(id) || updatedUser;
   },
 
   // Customers
   getCustomers(): Customer[] {
     return loadOrInit('customers', INITIAL_CUSTOMERS);
   },
-  addCustomer(c: Omit<Customer, 'id' | 'code' | 'created_at'>): Customer {
-    const list = this.getCustomers();
-    const newId = list.length > 0 ? Math.max(...list.map((i) => i.id)) + 1 : 1;
-    const code = `KH-${String(newId + 100).padStart(6, '0')}`;
+  async addCustomerAsync(c: Omit<Customer, 'id' | 'code' | 'created_at'>): Promise<Customer> {
+    const res = await ApiClient.requestStrict<Customer>('/customers', {
+      method: 'POST',
+      body: JSON.stringify(c),
+    });
     const newCustomer: Customer = {
       ...c,
-      id: newId,
-      code,
-      created_at: new Date().toISOString(),
+      ...res,
+      id: res.id,
+      code: res.code,
+      created_at: res.created_at || new Date().toISOString(),
     };
+    const list = this.getCustomers().filter((item) => item.id !== newCustomer.id);
     list.unshift(newCustomer);
     save('customers', list);
-    this.addAuditLog('CREATE_CUSTOMER', 'customers', code, `Thêm khách hàng mới: ${c.name}`);
-    return newCustomer;
+    await this.syncFromBackend();
+    return this.getCustomers().find((item) => item.id === res.id) || newCustomer;
   },
-  updateCustomer(id: number, data: Partial<Customer>): Customer | undefined {
-    const list = this.getCustomers();
-    const idx = list.findIndex((c) => c.id === id);
-    if (idx === -1) return undefined;
-    list[idx] = { ...list[idx], ...data };
-    save('customers', list);
-    return list[idx];
+  async updateCustomerAsync(id: number, data: Partial<Customer>): Promise<Customer> {
+    const res = await ApiClient.requestStrict<Customer>(`/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    await this.syncFromBackend();
+    return this.getCustomers().find((c) => c.id === id) || res;
   },
 
   // Devices
   getDevices(): CustomerDevice[] {
     return loadOrInit('devices', INITIAL_DEVICES);
   },
-  addDevice(d: Omit<CustomerDevice, 'id' | 'created_at'>): CustomerDevice {
-    const list = this.getDevices();
-    const newId = list.length > 0 ? Math.max(...list.map((i) => i.id)) + 1 : 1;
+  async addDeviceAsync(d: Omit<CustomerDevice, 'id' | 'created_at'>): Promise<CustomerDevice> {
+    const res = await ApiClient.requestStrict<CustomerDevice>('/devices', {
+      method: 'POST',
+      body: JSON.stringify(d),
+    });
     const newDevice: CustomerDevice = {
       ...d,
-      id: newId,
-      created_at: new Date().toISOString(),
+      ...res,
+      id: res.id,
+      created_at: res.created_at || new Date().toISOString(),
     };
+    const list = this.getDevices().filter((item) => item.id !== newDevice.id);
     list.unshift(newDevice);
     save('devices', list);
-    return newDevice;
+    await this.syncFromBackend();
+    return this.getDevices().find((item) => item.id === res.id) || newDevice;
   },
 
   // Categories & Brands
@@ -1139,60 +1234,115 @@ export const StorageService = {
   getTicketById(id: number): RepairTicket | undefined {
     return this.getTickets().find((t) => t.id === id);
   },
-  createTicket(data: Omit<RepairTicket, 'id' | 'ticket_code' | 'created_at' | 'updated_at'>): RepairTicket {
-    const list = this.getTickets();
-    const settings = this.getSettings();
-    const newId = list.length > 0 ? Math.max(...list.map((i) => i.id)) + 1 : 1;
-    
-    // Generate code: SC-YYYYMMDD-XXXX
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const code = `${settings.ticket_prefix || 'SC'}-${dateStr}-${String(newId).padStart(4, '0')}`;
-
+  async createTicketAsync(
+    data: Omit<RepairTicket, 'id' | 'ticket_code' | 'created_at' | 'updated_at'>
+  ): Promise<RepairTicket> {
+    const res = await ApiClient.requestStrict<RepairTicket>('/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    const nowIso = new Date().toISOString();
     const newTicket: RepairTicket = {
       ...data,
-      id: newId,
-      ticket_code: code,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString(),
+      ...res,
+      id: res.id,
+      ticket_code: res.ticket_code,
+      has_device_password: Boolean(res.has_device_password ?? data.device_password_hint),
+      created_at: res.created_at || nowIso,
+      updated_at: res.updated_at || nowIso,
     };
-
+    const list = this.getTickets().filter((t) => t.id !== newTicket.id);
     list.unshift(newTicket);
     save('tickets', list);
-
-    // Initial status history
-    this.addStatusHistory(newId, undefined, 'Received', data.created_by_name, 'Tiếp nhận thiết bị mới');
-    this.addAuditLog('CREATE_TICKET', 'repair_tickets', code, `Tạo mới phiếu sửa chữa ${code} cho ${data.customer_name}`);
-
-    return newTicket;
+    await this.syncFromBackend();
+    return this.getTicketById(res.id) || newTicket;
   },
 
-  updateTicket(id: number, updates: Partial<RepairTicket>): RepairTicket | undefined {
-    const list = this.getTickets();
-    const idx = list.findIndex((t) => t.id === id);
-    if (idx === -1) return undefined;
+  async transitionTicketAsync(
+    id: number,
+    targetStatus: RepairStatus,
+    options?: {
+      note?: string;
+      cancellation_reason?: string;
+      is_override?: boolean;
+      warranty_days?: number;
+      refund_amount?: number;
+      refund_method?: string;
+    }
+  ): Promise<RepairTicket & { warranty?: Warranty }> {
+    const targetLabel = STATUS_LABELS[targetStatus] || targetStatus;
+    const note = options?.note || options?.cancellation_reason || `Chuyển trạng thái sang ${targetLabel}`;
+    const res = await ApiClient.requestStrict<RepairTicket & { warranty?: Warranty }>(
+      `/tickets/${id}/transition`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          to_status: targetStatus,
+          note,
+          cancellation_reason: options?.cancellation_reason,
+          is_override: Boolean(options?.is_override),
+          warranty_days: options?.warranty_days,
+          refund_amount: options?.refund_amount,
+          refund_method: options?.refund_method,
+        }),
+      }
+    );
+    await this.syncFromBackend();
+    const syncedTicket = this.getTicketById(id) || res;
+    return res.warranty ? { ...syncedTicket, warranty: res.warranty } : syncedTicket;
+  },
 
-    const oldStatus = list[idx].status;
-
-    list[idx] = {
-      ...list[idx],
-      ...updates,
-      updated_at: new Date().toISOString(),
-    };
-    save('tickets', list);
-
-    if (updates.status && updates.status !== oldStatus) {
-      const targetLabel = STATUS_LABELS[updates.status] || updates.status;
-      this.addStatusHistory(
-        id,
-        oldStatus,
-        updates.status,
-        updates.primary_technician_name || 'Hệ thống',
-        updates.cancellation_reason || `Chuyển trạng thái sang ${targetLabel}`
-      );
+  async updateTicketAsync(
+    id: number,
+    updates: Partial<RepairTicket>,
+    isOverride = false,
+    transitionOptions?: {
+      note?: string;
+      warranty_days?: number;
+      refund_amount?: number;
+      refund_method?: string;
+    }
+  ): Promise<RepairTicket & { warranty?: Warranty }> {
+    const existing = this.getTicketById(id);
+    const hasStatusChange = Boolean(updates.status && (!existing || updates.status !== existing.status));
+    const nonStatusUpdates: Record<string, any> = {};
+    for (const [k, v] of Object.entries(updates)) {
+      if (k !== 'status' && k !== 'cancellation_reason') {
+        nonStatusUpdates[k] = v;
+      }
     }
 
-    return list[idx];
+    let transitionResult: (RepairTicket & { warranty?: Warranty }) | null = null;
+
+    if (Object.keys(nonStatusUpdates).length > 0) {
+      await ApiClient.requestStrict<RepairTicket>(`/tickets/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+    }
+
+    if (hasStatusChange && updates.status) {
+      transitionResult = await this.transitionTicketAsync(id, updates.status, {
+        note: transitionOptions?.note,
+        cancellation_reason: updates.cancellation_reason,
+        is_override: isOverride,
+        warranty_days: transitionOptions?.warranty_days,
+        refund_amount: transitionOptions?.refund_amount,
+        refund_method: transitionOptions?.refund_method,
+      });
+    } else {
+      await this.syncFromBackend();
+    }
+
+    const latest = this.getTicketById(id) || transitionResult;
+    if (!latest) throw new Error('Không tìm thấy phiếu sửa chữa sau khi cập nhật');
+    return transitionResult?.warranty ? { ...latest, warranty: transitionResult.warranty } : latest;
+  },
+
+  // Fetch decrypted device password on demand from server (with RBAC & Audit Log)
+  async getTicketDevicePassword(ticketId: number): Promise<string> {
+    const res = await ApiClient.requestStrict<{ password: string }>(`/tickets/${ticketId}/device-password`);
+    return res.password || '';
   },
 
   // Status history
@@ -1205,44 +1355,27 @@ export const StorageService = {
         notes: cleanStatusText(h.notes),
       }));
   },
-  addStatusHistory(
-    ticketId: number,
-    fromStatus: RepairStatus | undefined,
-    toStatus: RepairStatus,
-    changedBy: string,
-    notes?: string,
-    changedByRole?: string,
-    accountabilityStatement?: string
-  ): void {
-    const all = loadOrInit('histories', INITIAL_HISTORIES);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
-    all.push({
-      id: newId,
-      ticket_id: ticketId,
-      from_status: fromStatus,
-      to_status: toStatus,
-      changed_by_name: changedBy,
-      notes: cleanStatusText(notes),
-      created_at: new Date().toISOString(),
-    });
-    save('histories', all);
-  },
 
   // Diagnostics
   getDiagnostics(ticketId: number): RepairDiagnostic[] {
     const all = loadOrInit('diagnostics', INITIAL_DIAGNOSTICS);
     return all.filter((d) => d.ticket_id === ticketId);
   },
-  addDiagnostic(d: Omit<RepairDiagnostic, 'id' | 'created_at'>): RepairDiagnostic {
-    const all = loadOrInit('diagnostics', INITIAL_DIAGNOSTICS);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
+  async addDiagnosticAsync(d: Omit<RepairDiagnostic, 'id' | 'created_at'>): Promise<RepairDiagnostic> {
+    const res = await ApiClient.requestStrict<RepairDiagnostic>('/diagnostics', {
+      method: 'POST',
+      body: JSON.stringify(d),
+    });
     const newDiag: RepairDiagnostic = {
       ...d,
-      id: newId,
-      created_at: new Date().toISOString(),
+      ...res,
+      id: res.id,
+      created_at: res.created_at || new Date().toISOString(),
     };
+    const all = loadOrInit('diagnostics', INITIAL_DIAGNOSTICS).filter((item) => item.id !== newDiag.id);
     all.unshift(newDiag);
     save('diagnostics', all);
+    await this.syncFromBackend();
     return newDiag;
   },
 
@@ -1251,31 +1384,33 @@ export const StorageService = {
     const all = loadOrInit('quotes', INITIAL_QUOTES);
     return all.filter((q) => q.ticket_id === ticketId);
   },
-  addQuote(q: Omit<RepairQuote, 'id' | 'quote_code' | 'created_at'>): RepairQuote {
-    const all = loadOrInit('quotes', INITIAL_QUOTES);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const code = `BG-${dateStr}-${String(newId).padStart(4, '0')}`;
-    const newQuote: RepairQuote = {
-      ...q,
-      id: newId,
-      quote_code: code,
-      created_at: new Date().toISOString(),
-    };
-    all.unshift(newQuote);
-    save('quotes', all);
-    return newQuote;
+  async addQuoteAsync(q: Omit<RepairQuote, 'id' | 'quote_code' | 'created_at'>): Promise<RepairQuote> {
+    const res = await ApiClient.requestStrict<RepairQuote>('/quotes', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...q,
+        status: 'Sent',
+      }),
+    });
+    await this.syncFromBackend();
+    return this.getQuotes(q.ticket_id).find((item) => item.id === res.id) || res;
   },
-  updateQuoteStatus(quoteId: number, status: RepairQuote['status'], confirmedBy?: string, reason?: string): void {
-    const all = loadOrInit('quotes', INITIAL_QUOTES);
-    const idx = all.findIndex((q) => q.id === quoteId);
-    if (idx !== -1) {
-      all[idx].status = status;
-      if (confirmedBy) all[idx].confirmed_by = confirmedBy;
-      if (reason) all[idx].rejection_reason = reason;
-      all[idx].confirmed_at = new Date().toISOString();
-      save('quotes', all);
-    }
+  async updateQuoteStatusAsync(
+    quoteId: number,
+    status: 'Approved' | 'Rejected',
+    confirmedBy?: string,
+    reason?: string
+  ): Promise<RepairQuote> {
+    const res = await ApiClient.requestStrict<RepairQuote>(`/quotes/${quoteId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        status,
+        confirmed_by: confirmedBy,
+        rejection_reason: reason,
+      }),
+    });
+    await this.syncFromBackend();
+    return res;
   },
 
   // QC Checklists
@@ -1283,99 +1418,73 @@ export const StorageService = {
     const all = loadOrInit('checklists', INITIAL_CHECKLISTS);
     return all.find((c) => c.ticket_id === ticketId);
   },
-  saveChecklist(c: Omit<QCChecklist, 'id' | 'created_at'>): QCChecklist {
-    const all = loadOrInit('checklists', INITIAL_CHECKLISTS);
-    const idx = all.findIndex((item) => item.ticket_id === c.ticket_id);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
-    const entry: QCChecklist = {
+  async saveChecklistAsync(c: Omit<QCChecklist, 'id' | 'created_at'>): Promise<QCChecklist> {
+    const payload = {
       ...c,
-      id: idx !== -1 ? all[idx].id : newId,
-      created_at: new Date().toISOString(),
+      items: c.items.map((it: any) => ({
+        ...it,
+        title: it.item_name || it.title,
+        passed: it.passed !== undefined ? Boolean(it.passed) : it.status === 'Pass' || it.status === 'NA',
+      })),
     };
-    if (idx !== -1) {
-      all[idx] = entry;
-    } else {
-      all.unshift(entry);
-    }
-    save('checklists', all);
-    return entry;
+    const res = await ApiClient.requestStrict<QCChecklist>('/checklists', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    await this.syncFromBackend();
+    return this.getChecklist(c.ticket_id) || res;
   },
 
   // Inventory & Parts
   getParts(): Part[] {
     return loadOrInit('parts', INITIAL_PARTS);
   },
-  addPart(p: Omit<Part, 'id' | 'created_at'>): Part {
-    const list = this.getParts();
-    const newId = list.length > 0 ? Math.max(...list.map((i) => i.id)) + 1 : 1;
-    const newPart: Part = { ...p, id: newId, created_at: new Date().toISOString() };
-    list.unshift(newPart);
-    save('parts', list);
-    this.addAuditLog('CREATE_PART', 'parts', p.sku, `Thêm linh kiện mới: ${p.name} (SL: ${p.stock_quantity})`);
-    return newPart;
+  async addPartAsync(p: Omit<Part, 'id' | 'created_at'>): Promise<Part> {
+    const res = await ApiClient.requestStrict<Part>('/parts', {
+      method: 'POST',
+      body: JSON.stringify(p),
+    });
+    await this.syncFromBackend();
+    return this.getParts().find((item) => item.id === res.id) || res;
   },
-  updatePart(id: number, updates: Partial<Part>): Part {
-    const list = this.getParts();
-    const idx = list.findIndex((p) => p.id === id);
-    if (idx === -1) throw new Error('Không tìm thấy linh kiện');
-    
-    // If supplier is updated, fill supplier_name if supplier_id changed
+  async updatePartAsync(id: number, updates: Partial<Part>): Promise<Part> {
     if (updates.supplier_id && !updates.supplier_name) {
       const supp = this.getSuppliers().find((s) => s.id === updates.supplier_id);
       if (supp) updates.supplier_name = supp.name;
     }
-
-    const updated: Part = { ...list[idx], ...updates };
-    list[idx] = updated;
-    save('parts', list);
-    this.addAuditLog('UPDATE_PART', 'parts', updated.sku, `Cập nhật thông tin linh kiện: ${updated.name}`);
-    return updated;
-  },
-  updatePartStock(partId: number, delta: number): void {
-    const list = this.getParts();
-    const idx = list.findIndex((p) => p.id === partId);
-    if (idx !== -1) {
-      list[idx].stock_quantity = Math.max(0, list[idx].stock_quantity + delta);
-      save('parts', list);
-    }
+    const res = await ApiClient.requestStrict<Part>(`/parts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    await this.syncFromBackend();
+    return this.getParts().find((item) => item.id === id) || res;
   },
 
   // Suppliers
   getSuppliers(): Supplier[] {
     return loadOrInit('suppliers', INITIAL_SUPPLIERS);
   },
-  addSupplier(data: Omit<Supplier, 'id' | 'code'>): Supplier {
-    const list = this.getSuppliers();
-    const newId = list.length > 0 ? Math.max(...list.map((i) => i.id)) + 1 : 1;
-    const code = `NCC-${String(newId).padStart(3, '0')}`;
-    const newSupplier: Supplier = {
-      ...data,
-      id: newId,
-      code,
-      is_active: data.is_active ?? true,
-    };
-    list.unshift(newSupplier);
-    save('suppliers', list);
-    this.addAuditLog('CREATE_SUPPLIER', 'suppliers', code, `Thêm nhà cung cấp mới: ${data.name}`);
-    return newSupplier;
+  async addSupplierAsync(data: Omit<Supplier, 'id' | 'code'>): Promise<Supplier> {
+    const res = await ApiClient.requestStrict<Supplier>('/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    await this.syncFromBackend();
+    return this.getSuppliers().find((s) => s.id === res.id) || res;
   },
-  updateSupplier(id: number, updates: Partial<Supplier>): Supplier {
-    const list = this.getSuppliers();
-    const idx = list.findIndex((s) => s.id === id);
-    if (idx === -1) throw new Error('Không tìm thấy nhà cung cấp');
-    const updated: Supplier = { ...list[idx], ...updates };
-    list[idx] = updated;
-    save('suppliers', list);
-    this.addAuditLog('UPDATE_SUPPLIER', 'suppliers', updated.code, `Cập nhật thông tin nhà cung cấp: ${updated.name}`);
-    return updated;
+  async updateSupplierAsync(id: number, updates: Partial<Supplier>): Promise<Supplier> {
+    const res = await ApiClient.requestStrict<Supplier>(`/suppliers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    await this.syncFromBackend();
+    return this.getSuppliers().find((s) => s.id === id) || res;
   },
-  deleteSupplier(id: number): boolean {
-    const list = this.getSuppliers();
-    const target = list.find((s) => s.id === id);
-    if (!target) return false;
-    const filtered = list.filter((s) => s.id !== id);
-    save('suppliers', filtered);
-    this.addAuditLog('DELETE_SUPPLIER', 'suppliers', target.code, `Xóa nhà cung cấp: ${target.name}`);
+  async deleteSupplierAsync(id: number): Promise<boolean> {
+    await ApiClient.requestStrict(`/suppliers/${id}`, {
+      method: 'DELETE',
+    });
+    await this.syncFromBackend();
     return true;
   },
 
@@ -1385,15 +1494,7 @@ export const StorageService = {
     if (partId) return all.filter((b) => b.part_id === partId);
     return all;
   },
-  updateBatchRemainingQuantity(batchId: number, delta: number): void {
-    const all = loadOrInit('part_batches', INITIAL_BATCHES);
-    const idx = all.findIndex((b) => b.id === batchId);
-    if (idx !== -1) {
-      all[idx].remaining_quantity = Math.max(0, all[idx].remaining_quantity + delta);
-      save('part_batches', all);
-    }
-  },
-  addInventoryBatch(data: {
+  async addInventoryBatchAsync(data: {
     part_id: number;
     part_name: string;
     sku: string;
@@ -1407,118 +1508,57 @@ export const StorageService = {
     created_by_name?: string;
     notes?: string;
     custom_batch_code?: string;
-  }): InventoryBatch {
-    const all = loadOrInit('part_batches', INITIAL_BATCHES);
-    const newId = all.length > 0 ? Math.max(...all.map((b) => b.id)) + 1 : 1;
-
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const code = data.custom_batch_code?.trim() || `LOT-${todayStr}-${String(newId).padStart(3, '0')}`;
-
-    const newBatch: InventoryBatch = {
-      id: newId,
-      batch_code: code,
-      part_id: data.part_id,
-      part_name: data.part_name,
-      sku: data.sku,
-      supplier_id: data.supplier_id,
-      supplier_name: data.supplier_name,
-      import_quantity: Number(data.import_quantity),
-      remaining_quantity: Number(data.import_quantity),
-      cost_price: Number(data.cost_price),
-      selling_price: Number(data.selling_price),
-      import_date: data.import_date || new Date().toISOString().slice(0, 10),
-      expiry_date: data.expiry_date,
-      created_by_name: data.created_by_name || 'Hệ thống',
-      notes: data.notes,
-      created_at: new Date().toISOString(),
-    };
-
-    all.unshift(newBatch);
-    save('part_batches', all);
-
-    // Increase total part stock
-    this.updatePartStock(data.part_id, Number(data.import_quantity));
-
-    // Sync part's cost_price / selling_price / supplier if updated in batch
-    this.updatePart(data.part_id, {
-      cost_price: Number(data.cost_price),
-      selling_price: Number(data.selling_price),
-      supplier_id: data.supplier_id,
-      supplier_name: data.supplier_name,
+  }): Promise<InventoryBatch> {
+    const res = await ApiClient.requestStrict<InventoryBatch>('/batches', {
+      method: 'POST',
+      body: JSON.stringify({
+        part_id: data.part_id,
+        part_name: data.part_name,
+        sku: data.sku,
+        supplier_id: data.supplier_id,
+        supplier_name: data.supplier_name,
+        import_quantity: Number(data.import_quantity),
+        cost_price: Number(data.cost_price),
+        selling_price: Number(data.selling_price),
+        import_date: data.import_date || getLocalIsoDate(),
+        expiry_date: data.expiry_date,
+        notes: data.notes,
+        batch_code: data.custom_batch_code?.trim() || undefined,
+      }),
     });
-
-    this.addAuditLog(
-      'IMPORT_BATCH',
-      'inventory_batches',
-      code,
-      `Nhập kho đợt ${code}: +${data.import_quantity}x ${data.part_name} (Giá vốn: ${data.cost_price.toLocaleString()}đ)`
-    );
-
-    return newBatch;
+    await this.syncFromBackend();
+    return this.getBatches().find((b) => b.id === res.id) || res;
   },
-  updateInventoryBatch(batchId: number, updates: Partial<InventoryBatch>): InventoryBatch {
-    const all = loadOrInit('part_batches', INITIAL_BATCHES);
-    const idx = all.findIndex((b) => b.id === batchId);
-    if (idx === -1) throw new Error('Không tìm thấy thông tin đợt nhập kho');
-
-    const oldBatch = all[idx];
-    const updatedBatch: InventoryBatch = {
-      ...oldBatch,
-      ...updates,
-      import_quantity: updates.import_quantity !== undefined ? Number(updates.import_quantity) : oldBatch.import_quantity,
-      remaining_quantity: updates.remaining_quantity !== undefined ? Number(updates.remaining_quantity) : oldBatch.remaining_quantity,
-      cost_price: updates.cost_price !== undefined ? Number(updates.cost_price) : oldBatch.cost_price,
-      selling_price: updates.selling_price !== undefined ? Number(updates.selling_price) : oldBatch.selling_price,
-    };
-
+  async updateInventoryBatchAsync(
+    batchId: number,
+    updates: Partial<InventoryBatch>
+  ): Promise<InventoryBatch> {
     if (updates.supplier_id && !updates.supplier_name) {
       const supp = this.getSuppliers().find((s) => s.id === updates.supplier_id);
-      if (supp) updatedBatch.supplier_name = supp.name;
+      if (supp) updates.supplier_name = supp.name;
     }
-
-    all[idx] = updatedBatch;
-    save('part_batches', all);
-
-    // Sync total stock for part if remaining_quantity changed
-    const allPartBatches = all.filter((b) => b.part_id === updatedBatch.part_id);
-    const totalPartStock = allPartBatches.reduce((acc, b) => acc + b.remaining_quantity, 0);
-    const parts = this.getParts();
-    const pIdx = parts.findIndex((p) => p.id === updatedBatch.part_id);
-    if (pIdx !== -1) {
-      parts[pIdx].stock_quantity = totalPartStock;
-      parts[pIdx].cost_price = updatedBatch.cost_price;
-      parts[pIdx].selling_price = updatedBatch.selling_price;
-      save('parts', parts);
-    }
-
-    this.addAuditLog(
-      'UPDATE_BATCH',
-      'inventory_batches',
-      updatedBatch.batch_code,
-      `Cập nhật đợt nhập kho ${updatedBatch.batch_code}: Tồn kho ${updatedBatch.remaining_quantity} cái, Giá vốn: ${updatedBatch.cost_price.toLocaleString()}đ, Giá bán: ${updatedBatch.selling_price.toLocaleString()}đ`
-    );
-
-    return updatedBatch;
+    const res = await ApiClient.requestStrict<InventoryBatch>(`/batches/${batchId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        batch_code: updates.batch_code,
+        supplier_id: updates.supplier_id,
+        supplier_name: updates.supplier_name,
+        import_quantity: updates.import_quantity,
+        cost_price: updates.cost_price,
+        selling_price: updates.selling_price,
+        import_date: updates.import_date,
+        expiry_date: updates.expiry_date,
+        notes: updates.notes,
+      }),
+    });
+    await this.syncFromBackend();
+    return this.getBatches().find((b) => b.id === batchId) || res;
   },
-  deleteInventoryBatch(batchId: number): boolean {
-    const all = loadOrInit('part_batches', INITIAL_BATCHES);
-    const target = all.find((b) => b.id === batchId);
-    if (!target) return false;
-
-    const filtered = all.filter((b) => b.id !== batchId);
-    save('part_batches', filtered);
-
-    // Recalculate total part stock
-    const remainingPartBatches = filtered.filter((b) => b.part_id === target.part_id);
-    const totalPartStock = remainingPartBatches.reduce((acc, b) => acc + b.remaining_quantity, 0);
-    const parts = this.getParts();
-    const pIdx = parts.findIndex((p) => p.id === target.part_id);
-    if (pIdx !== -1) {
-      parts[pIdx].stock_quantity = totalPartStock;
-      save('parts', parts);
-    }
-
-    this.addAuditLog('DELETE_BATCH', 'inventory_batches', target.batch_code, `Xóa đợt nhập kho ${target.batch_code} của linh kiện ${target.part_name}`);
+  async deleteInventoryBatchAsync(batchId: number): Promise<boolean> {
+    await ApiClient.requestStrict(`/batches/${batchId}`, {
+      method: 'DELETE',
+    });
+    await this.syncFromBackend();
     return true;
   },
 
@@ -1528,84 +1568,22 @@ export const StorageService = {
     if (ticketId) return all.filter((u) => u.ticket_id === ticketId);
     return all;
   },
-  addPartUsage(usageData: Omit<RepairPartUsage, 'id' | 'created_at' | 'status'>): RepairPartUsage {
-    const all = loadOrInit('part_usages', INITIAL_PART_USAGES);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
-    
-    // Deduct stock quantity
-    const part = this.getParts().find((p) => p.id === usageData.part_id);
-    if (!part) throw new Error('Không tìm thấy thông tin linh kiện');
-    if (part.stock_quantity < usageData.quantity) {
-      throw new Error(`Số lượng tồn kho không đủ (Hiện tại còn: ${part.stock_quantity}, Yêu cầu: ${usageData.quantity})`);
-    }
-
-    if (usageData.batch_id) {
-      const batches = this.getBatches();
-      const batch = batches.find((b) => b.id === usageData.batch_id);
-      if (batch && batch.remaining_quantity < usageData.quantity) {
-        throw new Error(`Số lượng đợt nhập [${batch.batch_code}] không đủ (Còn: ${batch.remaining_quantity}, Yêu cầu: ${usageData.quantity})`);
-      }
-      this.updateBatchRemainingQuantity(usageData.batch_id, -usageData.quantity);
-    }
-
-    this.updatePartStock(part.id, -usageData.quantity);
-
-    const newUsage: RepairPartUsage = {
-      ...usageData,
-      id: newId,
-      status: 'Used',
-      created_at: new Date().toISOString(),
-    };
-
-    all.unshift(newUsage);
-    save('part_usages', all);
-
-    // Audit log
-    const ticket = this.getTicketById(usageData.ticket_id);
-    const ticketCode = ticket ? ticket.ticket_code : `ID #${usageData.ticket_id}`;
-    const batchInfo = usageData.batch_code ? ` [Đợt ${usageData.batch_code}]` : '';
-    this.addAuditLog(
-      'EXPORT_PART_TO_TICKET',
-      'repair_part_usages',
-      ticketCode,
-      `Xuất ${usageData.quantity}x ${usageData.part_name}${batchInfo} (${usageData.selling_price.toLocaleString()}đ/cái) cho phiếu ${ticketCode} bởi ${usageData.technician_name}`
-    );
-
-    return newUsage;
+  async addPartUsageAsync(
+    usageData: Omit<RepairPartUsage, 'id' | 'created_at' | 'status'>
+  ): Promise<RepairPartUsage> {
+    const res = await ApiClient.requestStrict<RepairPartUsage>('/part-usages', {
+      method: 'POST',
+      body: JSON.stringify(usageData),
+    });
+    await this.syncFromBackend();
+    return this.getPartUsages(usageData.ticket_id).find((u) => u.id === res.id) || res;
   },
-  returnPartUsage(usageId: number, technicianName: string): boolean {
-    const all = loadOrInit('part_usages', INITIAL_PART_USAGES);
-    const idx = all.findIndex((u) => u.id === usageId);
-    if (idx === -1) return false;
-
-    const usage = all[idx];
-    if (usage.status === 'Returned') {
-      throw new Error('Linh kiện này đã được hoàn trả lại kho trước đó.');
-    }
-
-    // Restore stock
-    this.updatePartStock(usage.part_id, usage.quantity);
-
-    // Restore batch stock if batch_id is present
-    if (usage.batch_id) {
-      this.updateBatchRemainingQuantity(usage.batch_id, usage.quantity);
-    }
-
-    // Update status to Returned
-    all[idx].status = 'Returned';
-    save('part_usages', all);
-
-    // Audit log
-    const ticket = this.getTicketById(usage.ticket_id);
-    const ticketCode = ticket ? ticket.ticket_code : `ID #${usage.ticket_id}`;
-    const batchInfo = usage.batch_code ? ` [Đợt ${usage.batch_code}]` : '';
-    this.addAuditLog(
-      'RETURN_PART_TO_STOCK',
-      'repair_part_usages',
-      ticketCode,
-      `Hoàn trả kho ${usage.quantity}x ${usage.part_name}${batchInfo} từ phiếu ${ticketCode} bởi ${technicianName}`
-    );
-
+  async returnPartUsageAsync(usageId: number, _technicianName?: string): Promise<boolean> {
+    await ApiClient.requestStrict(`/part-usages/${usageId}/return`, {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    });
+    await this.syncFromBackend();
     return true;
   },
 
@@ -1615,152 +1593,80 @@ export const StorageService = {
     if (ticketId) return all.filter((p) => p.ticket_id === ticketId);
     return all;
   },
-  addPayment(data: Omit<Payment, 'id' | 'payment_code' | 'created_at'>): Payment {
-    const all = loadOrInit('payments', INITIAL_PAYMENTS);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const code = `PT-${dateStr}-${String(newId).padStart(4, '0')}`;
-    const newPayment: Payment = {
-      ...data,
-      id: newId,
-      payment_code: code,
-      created_at: new Date().toISOString(),
-    };
-    all.unshift(newPayment);
-    save('payments', all);
-
-    // Safety sanitization: Never allow negative payment
-    const validAmount = Math.max(0, data.amount);
-
-    // Update ticket debt and paid
-    const ticket = this.getTicketById(data.ticket_id);
-    if (ticket) {
-      // If ticket has a final_amount, cannot pay more than remaining debt
-      const maxPayable = ticket.debt_amount > 0 ? ticket.debt_amount : (ticket.final_amount > 0 ? 0 : validAmount);
-      const effectiveAmount = ticket.final_amount > 0 ? Math.min(validAmount, ticket.debt_amount) : validAmount;
-      const newPaid = ticket.paid_amount + effectiveAmount;
-      const newDebt = Math.max(0, ticket.final_amount - newPaid);
-      this.updateTicket(ticket.id, {
-        paid_amount: newPaid,
-        debt_amount: newDebt,
-      });
-    }
-
-    this.addAuditLog('PAYMENT', 'payments', code, `Thu tiền ${data.amount.toLocaleString()} đ từ ${data.customer_name}`);
-    return newPayment;
+  async addPaymentAsync(data: Omit<Payment, 'id' | 'payment_code' | 'created_at'>): Promise<Payment> {
+    const res = await ApiClient.requestStrict<Payment>('/payments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    await this.syncFromBackend();
+    return this.getPayments(data.ticket_id).find((p) => p.id === res.id) || res;
   },
 
-  // Automated Payment Webhook Processor (VietQR / SmartPOS)
-  processPaymentWebhook(payload: {
+  // Item D.3: Dev-only Server Webhook Simulation
+  async simulateWebhookAsync(payload: {
     amount: number;
     content: string;
-    transaction_id?: string;
-    bank_brand?: string;
+    transaction_ref?: string;
     gateway_provider?: string;
     payment_method?: PaymentMethod;
     card_brand?: string;
-    pos_terminal?: string;
-  }): { success: boolean; message: string; payment?: Payment; ticket?: RepairTicket } {
-    const tickets = this.getTickets();
-    
-    // Extract ticket code: regex pattern SC-YYYYMMDD-XXXX
-    const match = payload.content.match(/SC-\d{8}-\d{4}/i);
-    let matchedTicket: RepairTicket | undefined;
-    if (match) {
-      matchedTicket = tickets.find((t) => t.ticket_code.toLowerCase() === match[0].toLowerCase());
-    }
-    
-    // Fuzzy matching if not matched by strict regex
-    if (!matchedTicket) {
-      matchedTicket = tickets.find((t) => payload.content.toLowerCase().includes(t.ticket_code.toLowerCase()));
-    }
-
-    if (!matchedTicket) {
-      return {
-        success: false,
-        message: `Không tìm thấy phiếu sửa chữa tương ứng với nội dung: "${payload.content}"`,
-      };
-    }
-
-    const txRef = payload.transaction_id || `TXN${Date.now()}`;
-    const method: PaymentMethod = payload.payment_method || (payload.card_brand ? 'POS_Card' : 'Bank_Transfer');
-    const isPOS = method === 'POS_Card';
-
-    const newPayment = this.addPayment({
-      ticket_id: matchedTicket.id,
-      ticket_code: matchedTicket.ticket_code,
-      customer_name: matchedTicket.customer_name,
-      amount: payload.amount,
-      payment_method: method,
-      payment_type: matchedTicket.debt_amount <= payload.amount ? 'Final' : 'Installment',
-      transaction_ref: txRef,
-      cashier_name: isPOS
-        ? `SmartPOS (${payload.pos_terminal || 'Quầy thu ngân'})`
-        : `Cổng ${payload.gateway_provider || 'VietQR'} Auto-Webhook`,
-      notes: isPOS
-        ? `Tự động xác nhận quẹt thẻ SmartPOS [${payload.card_brand || 'Thẻ ATM/Visa'}] qua máy ${payload.pos_terminal || 'POS-01'}`
-        : `Tự động nhận diện biến động số dư từ ${payload.bank_brand || 'Ngân hàng'}: "${payload.content}"`,
-      is_auto_verified: true,
-      gateway_provider: payload.gateway_provider || (isPOS ? 'VNPAY_POS' : 'SePAY'),
-      card_brand: payload.card_brand,
+  }): Promise<{
+    processed: boolean;
+    matched?: boolean;
+    duplicate?: boolean;
+    reason?: string;
+    payment?: Payment;
+    ticket?: RepairTicket;
+  }> {
+    const res = await ApiClient.requestStrict<{
+      processed: boolean;
+      matched?: boolean;
+      duplicate?: boolean;
+      reason?: string;
+      payment?: Payment;
+      ticket?: RepairTicket;
+    }>('/dev/simulate-webhook', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
-
-    const updatedTicket = this.getTicketById(matchedTicket.id);
-
-    this.addAuditLog(
-      'AUTO_PAYMENT_WEBHOOK',
-      'payments',
-      newPayment.payment_code,
-      `Hệ thống tự động xác nhận thu tiền ${payload.amount.toLocaleString()} đ qua ${isPOS ? 'Máy SmartPOS' : 'VietQR Webhook'} cho phiếu ${matchedTicket.ticket_code}`
-    );
-
-    // Trigger window event for real-time reactivity across active tabs
-    if (typeof window !== 'undefined') {
+    await this.syncFromBackend();
+    if (typeof window !== 'undefined' && res.payment) {
       window.dispatchEvent(
         new CustomEvent('repairflow_auto_payment', {
-          detail: { payment: newPayment, ticket: updatedTicket },
+          detail: { payment: res.payment, ticket: res.ticket },
         })
       );
     }
-
-    return {
-      success: true,
-      message: `Đã tự động xác nhận thanh toán ${payload.amount.toLocaleString()} đ cho phiếu ${matchedTicket.ticket_code}!`,
-      payment: newPayment,
-      ticket: updatedTicket,
-    };
+    return res;
   },
 
   // Warranties
   getWarranties(): Warranty[] {
     return loadOrInit('warranties', INITIAL_WARRANTIES);
   },
-  addWarranty(ticket: RepairTicket, days = 90): Warranty {
-    const all = this.getWarranties();
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
+  async addWarrantyAsync(ticket: RepairTicket, days = 90): Promise<Warranty> {
     const now = new Date();
     const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const code = `BH-${dateStr}-${String(newId).padStart(4, '0')}`;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const formatLocalIsoDate = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-    const newWarranty: Warranty = {
-      id: newId,
-      warranty_code: code,
-      ticket_id: ticket.id,
-      ticket_code: ticket.ticket_code,
-      device_summary: `${ticket.device_brand} ${ticket.device_model}`,
-      customer_name: ticket.customer_name,
-      customer_phone: ticket.customer_phone,
-      start_date: now.toISOString().slice(0, 10),
-      end_date: endDate.toISOString().slice(0, 10),
-      terms: `Bảo hành ${days} ngày cho dịch vụ & linh kiện đã thay thế.`,
-      status: 'Active',
-      created_at: now.toISOString(),
-    };
-
-    all.unshift(newWarranty);
-    save('warranties', all);
-    return newWarranty;
+    const res = await ApiClient.requestStrict<Warranty>('/warranties', {
+      method: 'POST',
+      body: JSON.stringify({
+        ticket_id: ticket.id,
+        ticket_code: ticket.ticket_code,
+        device_summary: `${ticket.device_brand} ${ticket.device_model}`,
+        customer_name: ticket.customer_name,
+        customer_phone: ticket.customer_phone,
+        start_date: formatLocalIsoDate(now),
+        end_date: formatLocalIsoDate(endDate),
+        terms: `Bảo hành ${days} ngày cho dịch vụ & linh kiện đã thay thế.`,
+        status: 'Active',
+      }),
+    });
+    await this.syncFromBackend();
+    return this.getWarranties().find((w) => w.id === res.id) || res;
   },
 
   // Promotions & Discounts
@@ -1775,58 +1681,79 @@ export const StorageService = {
     const clean = code.trim().toUpperCase();
     return this.getPromotions().find((p) => p.code.toUpperCase() === clean);
   },
-  addPromotion(data: Omit<Promotion, 'id' | 'created_at' | 'usage_count'>): Promotion {
-    const all = this.getPromotions();
+  async addPromotionAsync(data: Omit<Promotion, 'id' | 'created_at' | 'usage_count'>): Promise<Promotion> {
     const cleanCode = data.code.trim().toUpperCase();
-    if (all.some((p) => p.code.toUpperCase() === cleanCode)) {
-      throw new Error(`Mã ưu đãi "${cleanCode}" đã tồn tại trên hệ thống! Vui lòng chọn mã khác.`);
-    }
-    const newId = all.length > 0 ? Math.max(...all.map((p) => p.id)) + 1 : 1;
-    const newPromo: Promotion = {
-      ...data,
-      id: newId,
-      code: cleanCode,
-      usage_count: 0,
-      created_at: new Date().toISOString(),
-    };
-    all.unshift(newPromo);
-    save('promotions', all);
-    this.addAuditLog('CREATE_PROMO', 'promotions', newPromo.code, `Tạo mã ưu đãi mới: ${newPromo.code} - ${newPromo.name}`);
-    return newPromo;
+    const res = await ApiClient.requestStrict<Promotion>('/promotions', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...data,
+        code: cleanCode,
+      }),
+    });
+    await this.syncFromBackend();
+    return this.getPromotionById(res.id) || res;
   },
-  updatePromotion(id: number, data: Partial<Promotion>): Promotion {
-    const all = this.getPromotions();
-    const idx = all.findIndex((p) => p.id === id);
-    if (idx === -1) throw new Error('Không tìm thấy chương trình ưu đãi');
-    
+  async updatePromotionAsync(id: number, data: Partial<Promotion>): Promise<Promotion> {
     if (data.code) {
-      const cleanCode = data.code.trim().toUpperCase();
-      const existing = all.find((p) => p.code.toUpperCase() === cleanCode && p.id !== id);
-      if (existing) {
-        throw new Error(`Mã ưu đãi "${cleanCode}" đã bị trùng với chương trình khác!`);
-      }
-      data.code = cleanCode;
+      data.code = data.code.trim().toUpperCase();
     }
-
-    const updated = {
-      ...all[idx],
-      ...data,
-    };
-    all[idx] = updated;
-    save('promotions', all);
-    this.addAuditLog('UPDATE_PROMO', 'promotions', updated.code, `Cập nhật chương trình ưu đãi ${updated.code}`);
-    return updated;
+    const existing = this.getPromotionById(id);
+    const res = await ApiClient.requestStrict<Promotion>(`/promotions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...(existing || {}), ...data }),
+    });
+    await this.syncFromBackend();
+    return this.getPromotionById(id) || res;
   },
-  deletePromotion(id: number): boolean {
-    const all = this.getPromotions();
-    const target = all.find((p) => p.id === id);
-    if (!target) return false;
-    const filtered = all.filter((p) => p.id !== id);
-    save('promotions', filtered);
-    this.addAuditLog('DELETE_PROMO', 'promotions', target.code, `Xóa mã ưu đãi: ${target.code}`);
+  async deletePromotionAsync(id: number): Promise<boolean> {
+    await ApiClient.requestStrict(`/promotions/${id}`, {
+      method: 'DELETE',
+    });
+    await this.syncFromBackend();
     return true;
   },
-  validateAndCalculatePromotion(code: string, subtotal: number): {
+  async validatePromotionAsync(
+    code: string,
+    subtotal: number
+  ): Promise<{
+    valid: boolean;
+    promotion?: Promotion;
+    discountAmount: number;
+    message?: string;
+  }> {
+    if (!code || !code.trim()) {
+      return { valid: false, discountAmount: 0, message: 'Vui lòng nhập hoặc chọn mã ưu đãi.' };
+    }
+    try {
+      const res = await ApiClient.requestStrict<{
+        valid: boolean;
+        promotion: Promotion;
+        discountAmount: number;
+        message?: string;
+      }>('/promotions/validate', {
+        method: 'POST',
+        body: JSON.stringify({ code: code.trim().toUpperCase(), subtotal }),
+      });
+      return {
+        valid: true,
+        promotion: res.promotion,
+        discountAmount: res.discountAmount,
+        message:
+          res.message ||
+          `Áp dụng thành công mã ${res.promotion.code}: Giảm ${res.discountAmount.toLocaleString('vi-VN')} đ (${res.promotion.name})`,
+      };
+    } catch (err: any) {
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: err?.message || 'Mã ưu đãi không hợp lệ.',
+      };
+    }
+  },
+  validateAndCalculatePromotion(
+    code: string,
+    subtotal: number
+  ): {
     valid: boolean;
     promotion?: Promotion;
     discountAmount: number;
@@ -1837,27 +1764,44 @@ export const StorageService = {
     }
     const promo = this.getPromotionByCode(code);
     if (!promo) {
-      return { valid: false, discountAmount: 0, message: `Mã ưu đãi "${code.trim().toUpperCase()}" không tồn tại hoặc đã hết hiệu lực.` };
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: `Mã ưu đãi "${code.trim().toUpperCase()}" không tồn tại hoặc đã hết hiệu lực.`,
+      };
     }
     if (!promo.is_active) {
-      return { valid: false, discountAmount: 0, message: `Chương trình ưu đãi "${promo.code}" đang tạm ngưng áp dụng.` };
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: `Chương trình ưu đãi "${promo.code}" đang tạm ngưng áp dụng.`,
+      };
     }
 
-    // Check validity date
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalIsoDate();
     if (promo.start_date && today < promo.start_date) {
-      return { valid: false, discountAmount: 0, message: `Mã ưu đãi có hiệu lực từ ngày ${promo.start_date}.` };
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: `Mã ưu đãi có hiệu lực từ ngày ${promo.start_date}.`,
+      };
     }
     if (promo.end_date && today > promo.end_date) {
-      return { valid: false, discountAmount: 0, message: `Mã ưu đãi đã hết hạn sử dụng (${promo.end_date}).` };
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: `Mã ưu đãi đã hết hạn sử dụng (${promo.end_date}).`,
+      };
     }
 
-    // Check usage limit
     if (promo.usage_limit && promo.usage_count >= promo.usage_limit) {
-      return { valid: false, discountAmount: 0, message: 'Chương trình ưu đãi này đã hết lượt sử dụng quy định.' };
+      return {
+        valid: false,
+        discountAmount: 0,
+        message: 'Chương trình ưu đãi này đã hết lượt sử dụng quy định.',
+      };
     }
 
-    // Check min order
     if (promo.min_order_amount && subtotal < promo.min_order_amount) {
       return {
         valid: false,
@@ -1866,7 +1810,6 @@ export const StorageService = {
       };
     }
 
-    // Calculate discount amount
     let calculated = 0;
     if (promo.discount_type === 'percentage') {
       calculated = Math.round((subtotal * promo.discount_value) / 100);
@@ -1877,7 +1820,6 @@ export const StorageService = {
       calculated = promo.discount_value;
     }
 
-    // Cannot exceed total
     calculated = Math.min(calculated, subtotal);
 
     return {
@@ -1887,31 +1829,13 @@ export const StorageService = {
       message: `Áp dụng thành công mã ${promo.code}: Giảm ${calculated.toLocaleString('vi-VN')} đ (${promo.name})`,
     };
   },
-  recordPromotionUsage(code: string): void {
-    const promo = this.getPromotionByCode(code);
-    if (!promo) return;
-    this.updatePromotion(promo.id, { usage_count: promo.usage_count + 1 });
-  },
 
-  // Audit Logs
+  // Audit Logs (Audit logs are generated automatically on the server)
   getAuditLogs(): AuditLog[] {
     return loadOrInit('audit_logs', INITIAL_AUDIT_LOGS);
   },
-  addAuditLog(action: string, entityType: string, entityId: string, details: string, userName?: string): void {
-    const all = loadOrInit('audit_logs', INITIAL_AUDIT_LOGS);
-    const newId = all.length > 0 ? Math.max(...all.map((i) => i.id)) + 1 : 1;
-    // Ensure passwords or secret codes are never recorded in audit logs
-    const sanitizedDetails = details.replace(/(?:mật khẩu|pass|pin|password)[^,.\n]*/gi, '[BẢO MẬT]');
-    all.unshift({
-      id: newId,
-      user_name: userName || 'Người dùng',
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      details: sanitizedDetails,
-      created_at: new Date().toISOString(),
-    });
-    save('audit_logs', all.slice(0, 200)); // Keep last 200 logs
+  addAuditLog(_action: string, _entityType: string, _entityId: string, _details: string, _userName?: string): void {
+    // No-op on client: audit logs are recorded authoritatively by the backend
   },
 
   // Retail Sales Orders (Bán hàng & Bán thiết bị tại quầy)
@@ -1921,73 +1845,40 @@ export const StorageService = {
   getRetailOrderById(id: number): RetailSaleOrder | undefined {
     return this.getRetailOrders().find((o) => o.id === id);
   },
-  createRetailOrder(orderData: Omit<RetailSaleOrder, 'id' | 'order_code' | 'created_at'>): RetailSaleOrder {
-    const orders = this.getRetailOrders();
-    const newId = orders.length > 0 ? Math.max(...orders.map((o) => o.id)) + 1 : 1;
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const seq = String(orders.length + 1).padStart(4, '0');
-    const orderCode = `HD-${dateStr}-${seq}`;
-
-    const newOrder: RetailSaleOrder = {
-      ...orderData,
-      id: newId,
-      order_code: orderCode,
-      created_at: now.toISOString(),
-    };
-
-    // Auto deduct inventory stock for sold parts/batches
-    newOrder.items.forEach((item) => {
-      if (item.batch_id) {
-        const batches = this.getBatches();
-        const targetBatch = batches.find((b) => b.id === item.batch_id);
-        if (targetBatch && targetBatch.remaining_quantity >= item.quantity) {
-          this.updateInventoryBatch(targetBatch.id, {
-            remaining_quantity: targetBatch.remaining_quantity - item.quantity,
-          });
-        }
-      } else if (item.part_id) {
-        const parts = this.getParts();
-        const part = parts.find((p) => p.id === item.part_id);
-        if (part) {
-          this.updatePart(part.id, {
-            stock_quantity: Math.max(0, part.stock_quantity - item.quantity),
-          });
-        }
-      }
+  async createRetailOrderAsync(
+    orderData: Omit<RetailSaleOrder, 'id' | 'order_code' | 'created_at'>
+  ): Promise<RetailSaleOrder> {
+    const res = await ApiClient.requestStrict<{
+      id: number;
+      order_code: string;
+      subtotal_amount: number;
+      discount_amount: number;
+      final_amount: number;
+      paid_amount: number;
+      debt_amount: number;
+    }>('/retail-orders', {
+      method: 'POST',
+      body: JSON.stringify(orderData),
     });
 
-    // Handle customer debt if unpaid or partial
-    if (newOrder.debt_amount > 0 && newOrder.customer_id) {
-      const customers = this.getCustomers();
-      const customer = customers.find((c) => c.id === newOrder.customer_id);
-      if (customer) {
-        this.updateCustomer(customer.id, {
-          current_debt: customer.current_debt + newOrder.debt_amount,
-        });
-      }
-    }
+    await this.syncFromBackend();
+    const synced = this.getRetailOrderById(res.id);
+    if (synced) return synced;
 
-    // Record promotion usage if voucher used
-    if (newOrder.promotion_code) {
-      this.recordPromotionUsage(newOrder.promotion_code);
-    }
-
-    orders.unshift(newOrder);
-    save('retail_orders', orders);
-
-    this.addAuditLog(
-      'Bán lẻ tại quầy',
-      'RetailSaleOrder',
-      orderCode,
-      `Bán lẻ cho khách ${newOrder.customer_name} - Trị giá: ${newOrder.final_amount.toLocaleString('vi-VN')} đ - TT: ${newOrder.payment_method}`,
-      newOrder.created_by_name
-    );
-
-    return newOrder;
+    return {
+      ...orderData,
+      id: res.id,
+      order_code: res.order_code,
+      subtotal_amount: res.subtotal_amount ?? orderData.subtotal_amount,
+      discount_amount: res.discount_amount ?? orderData.discount_amount,
+      final_amount: res.final_amount ?? orderData.final_amount,
+      paid_amount: res.paid_amount ?? orderData.paid_amount,
+      debt_amount: res.debt_amount ?? orderData.debt_amount,
+      created_at: new Date().toISOString(),
+    };
   },
 
-  refundRetailOrder(
+  async refundRetailOrderAsync(
     orderId: number,
     options: {
       refundReason: string;
@@ -1995,76 +1886,19 @@ export const StorageService = {
       returnStockToInventory: boolean;
       refundedByName: string;
     }
-  ): RetailSaleOrder {
-    const orders = this.getRetailOrders();
-    const idx = orders.findIndex((o) => o.id === orderId);
-    if (idx === -1) throw new Error('Không tìm thấy hóa đơn cần hoàn trả');
-
-    const targetOrder = orders[idx];
-    if (targetOrder.order_status === 'Refunded') {
-      throw new Error('Hóa đơn này đã được hoàn trả trước đó');
-    }
-
-    const maxRefundAllowed = Math.max(0, targetOrder.paid_amount || targetOrder.final_amount);
-    if (options.refundAmount > maxRefundAllowed) {
-      throw new Error(
-        `Số tiền hoàn trả (${options.refundAmount.toLocaleString('vi-VN')} đ) không được vượt quá mức thực thu tối đa (${maxRefundAllowed.toLocaleString('vi-VN')} đ)!`
-      );
-    }
-
-    const nowIso = new Date().toISOString();
-
-    // 1. Revert inventory stock if requested
-    if (options.returnStockToInventory && targetOrder.items) {
-      targetOrder.items.forEach((item) => {
-        if (item.batch_id) {
-          const batches = this.getBatches();
-          const targetBatch = batches.find((b) => b.id === item.batch_id);
-          if (targetBatch) {
-            this.updateInventoryBatch(targetBatch.id, {
-              remaining_quantity: targetBatch.remaining_quantity + item.quantity,
-            });
-          }
-        } else if (item.part_id) {
-          this.updatePartStock(item.part_id, item.quantity);
-        }
-      });
-    }
-
-    // 2. Revert customer debt if any
-    if (targetOrder.debt_amount > 0 && targetOrder.customer_id) {
-      const customers = this.getCustomers();
-      const customer = customers.find((c) => c.id === targetOrder.customer_id);
-      if (customer) {
-        this.updateCustomer(customer.id, {
-          current_debt: Math.max(0, customer.current_debt - targetOrder.debt_amount),
-        });
-      }
-    }
-
-    // 3. Update order object status
-    const updatedOrder: RetailSaleOrder = {
-      ...targetOrder,
-      order_status: 'Refunded',
-      payment_status: 'Refunded',
-      refund_amount: options.refundAmount,
-      refund_reason: options.refundReason,
-      refunded_at: nowIso,
-      refunded_by_name: options.refundedByName,
-      return_to_stock: options.returnStockToInventory,
-    };
-
-    orders[idx] = updatedOrder;
-    save('retail_orders', orders);
-
-    this.addAuditLog(
-      'HOÀN_TRẢ_HÓA_ĐƠN',
-      'RetailSaleOrder',
-      targetOrder.order_code,
-      `Hoàn trả hóa đơn ${targetOrder.order_code} - Số tiền hoàn: ${options.refundAmount.toLocaleString('vi-VN')} đ - Lý do: ${options.refundReason} - Cộng hoàn kho: ${options.returnStockToInventory ? 'Có' : 'Không'}`,
-      options.refundedByName
-    );
-
-    return updatedOrder;
+  ): Promise<RetailSaleOrder> {
+    await ApiClient.requestStrict(`/retail-orders/${orderId}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({
+        refund_amount: options.refundAmount,
+        refund_reason: options.refundReason,
+        return_to_stock: options.returnStockToInventory,
+        refunded_by_name: options.refundedByName,
+      }),
+    });
+    await this.syncFromBackend();
+    const updated = this.getRetailOrderById(orderId);
+    if (!updated) throw new Error('Không tìm thấy hóa đơn sau khi hoàn trả');
+    return updated;
   },
 };

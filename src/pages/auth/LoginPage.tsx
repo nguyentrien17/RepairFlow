@@ -5,13 +5,10 @@ import {
   User,
   Eye,
   EyeOff,
-  ShieldCheck,
   CheckCircle2,
   ExternalLink,
   LogIn,
   AlertCircle,
-  HelpCircle,
-  ArrowRight,
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -24,11 +21,11 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSuccess }) => {
-  const { login, allUsers } = useAuth();
+  const { login } = useAuth();
   const { showToast } = useToast();
 
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const [password, setPassword] = useState('Admin@123');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -36,7 +33,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
 
   const settings = StorageService.getSettings();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -46,38 +43,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
     }
 
     setIsLoading(true);
+    const res = await login(username, password);
+    setIsLoading(false);
 
-    setTimeout(() => {
-      const res = login(username, password);
-      setIsLoading(false);
-
-      if (res.success) {
-        showToast('Đăng nhập thành công! Chào mừng bạn trở lại.', 'success');
-        onLoginSuccess?.();
-      } else {
-        setErrorMessage(res.message || 'Đăng nhập không thành công');
-        showToast(res.message || 'Đăng nhập thất bại', 'error');
-      }
-    }, 350);
+    if (res.success) {
+      showToast('Đăng nhập thành công! Chào mừng bạn trở lại.', 'success');
+      onLoginSuccess?.();
+    } else {
+      setErrorMessage(res.message || 'Đăng nhập không thành công');
+      showToast(res.message || 'Đăng nhập thất bại', 'error');
+    }
   };
 
-  const handleQuickLogin = (uname: string, pwd?: string) => {
+  const handleQuickLogin = async (uname: string, pwd: string) => {
     setUsername(uname);
-    const resolvedPwd = pwd || (uname === 'admin' ? 'admin' : '123');
-    setPassword(resolvedPwd);
+    setPassword(pwd);
     setErrorMessage('');
     setIsLoading(true);
 
-    setTimeout(() => {
-      const res = login(uname, resolvedPwd);
-      setIsLoading(false);
-      if (res.success) {
-        showToast(`Đăng nhập thành công với tài khoản: ${uname}!`, 'success');
-        onLoginSuccess?.();
-      } else {
-        setErrorMessage(res.message || 'Không thể đăng nhập');
-      }
-    }, 250);
+    const res = await login(uname, pwd);
+    setIsLoading(false);
+    if (res.success) {
+      showToast(`Đăng nhập thành công với tài khoản: ${uname}!`, 'success');
+      onLoginSuccess?.();
+    } else {
+      setErrorMessage(res.message || 'Không thể đăng nhập');
+    }
   };
 
   return (
@@ -122,8 +113,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                   <CheckCircle2 className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-white">Ràng buộc trách nhiệm & Trạng thái</h4>
-                  <p className="text-[11px] text-indigo-300">KTV phụ trách, QC kiểm thử độc lập, đối soát minh bạch.</p>
+                  <h4 className="text-xs font-bold text-white">Xác thực JWT & Phân quyền RBAC</h4>
+                  <p className="text-[11px] text-indigo-300">Mật khẩu băm Scrypt, mã hóa AES-256-GCM và nhật ký Audit tự động.</p>
                 </div>
               </div>
 
@@ -133,7 +124,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Thanh toán VietQR & In hóa đơn</h4>
-                  <p className="text-[11px] text-indigo-300">Tự động điền số tiền, đối soát giao dịch ngân hàng & công nợ.</p>
+                  <p className="text-[11px] text-indigo-300">Tự động điền số tiền, đối soát giao dịch ngân hàng & công nợ ACID.</p>
                 </div>
               </div>
 
@@ -143,7 +134,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Cổng tra cứu minh bạch cho khách</h4>
-                  <p className="text-[11px] text-indigo-300">Khách tra cứu trực tiếp bằng mã phiếu & số điện thoại.</p>
+                  <p className="text-[11px] text-indigo-300">Khách tra cứu trực tiếp bằng mã phiếu & xác thực 4 số cuối SĐT.</p>
                 </div>
               </div>
             </div>
@@ -167,7 +158,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                 </p>
               </div>
               <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                Phiên bản v2.5
+                SQL Backend v2.5
               </span>
             </div>
 
@@ -205,7 +196,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                     Mật khẩu <span className="text-rose-500">*</span>
                   </label>
                   <span className="text-[11px] text-slate-400">
-                    (Tài khoản mẫu: <span className="font-mono text-indigo-600 font-bold">admin</span> hoặc <span className="font-mono text-indigo-600 font-bold">123</span>)
+                    (Mặc định Dev: <span className="font-mono text-indigo-600 font-bold">Admin@123</span>)
                   </span>
                 </div>
                 <div className="relative">
@@ -245,12 +236,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
                   type="button"
                   onClick={() => {
                     setUsername('admin');
-                    setPassword('admin');
+                    setPassword('Admin@123');
                     showToast('Đã điền thông tin tài khoản Admin mẫu', 'info');
                   }}
                   className="text-xs text-indigo-600 hover:underline cursor-pointer"
                 >
-                  Quên mật khẩu? (Điền lại Admin)
+                  Điền nhanh Admin
                 </button>
               </div>
 
@@ -275,7 +266,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
               <div className="flex items-center justify-between mb-2.5">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Đăng nhập nhanh 1 chạm (Chọn tài khoản)</span>
+                  <span>Đăng nhập nhanh 1 chạm (Môi trường Dev)</span>
                 </p>
                 <span className="text-[10px] text-slate-400">Click để vào ngay</span>
               </div>
@@ -283,7 +274,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('admin', 'admin')}
+                  onClick={() => handleQuickLogin('admin', 'Admin@123')}
                   className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
                     username === 'admin'
                       ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
@@ -296,7 +287,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
 
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('manager', '123')}
+                  onClick={() => handleQuickLogin('manager', 'Manager@123')}
                   className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
                     username === 'manager'
                       ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
@@ -309,7 +300,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
 
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('letan', '123')}
+                  onClick={() => handleQuickLogin('letan', 'Letan@123')}
                   className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
                     username === 'letan'
                       ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
@@ -322,7 +313,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
 
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('kythuat', '123')}
+                  onClick={() => handleQuickLogin('kythuat', 'Kythuat@123')}
                   className={`p-2 rounded-xl border transition-all text-left group cursor-pointer ${
                     username === 'kythuat'
                       ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'
@@ -335,7 +326,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onOpenLookup, onLoginSucce
 
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('thungan', '123')}
+                  onClick={() => handleQuickLogin('thungan', 'Thungan@123')}
                   className={`p-2 rounded-xl border transition-all text-left group cursor-pointer col-span-2 sm:col-span-1 ${
                     username === 'thungan'
                       ? 'border-indigo-500 bg-indigo-50/70 shadow-xs ring-1 ring-indigo-500'

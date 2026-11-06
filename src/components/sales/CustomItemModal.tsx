@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { StorageService } from '../../services/mockStorage';
-import { PlusCircle, X, Laptop, ShieldCheck, Tag, Cpu, DollarSign } from 'lucide-react';
+import { PlusCircle, X, Laptop } from 'lucide-react';
 
 export interface CustomSaleItem {
-  part_id: number;
+  part_id?: number;
+  batch_id?: number;
+  batch_code?: string;
   product_name: string;
   sku: string;
-  item_type: 'part' | 'device' | 'accessory';
+  item_type: 'part' | 'device' | 'accessory' | 'custom';
   quantity: number;
   max_stock: number;
   cost_price: number;
@@ -30,11 +33,14 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
   onAddCustomItem,
 }) => {
   const { showToast } = useToast();
+  const { hasRole } = useAuth();
   const settings = StorageService.getSettings();
+  const canSellUntrackedCustom = hasRole(['admin', 'manager']);
 
   const [productName, setProductName] = useState('');
   const [sku, setSku] = useState('');
-  const [itemType, setItemType] = useState<'device' | 'part' | 'accessory'>('device');
+  const [itemType, setItemType] = useState<'device' | 'part' | 'accessory' | 'custom'>('device');
+  const [createInInventory, setCreateInInventory] = useState<boolean>(true);
   const [serialNumber, setSerialNumber] = useState('');
   const [specs, setSpecs] = useState('');
   const [costPrice, setCostPrice] = useState<number | ''>(0);
@@ -42,11 +48,13 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
   const [warrantyMonths, setWarrantyMonths] = useState<number>(6);
   const [returnDays, setReturnDays] = useState<number>(settings.default_return_days || 15);
   const [quantity, setQuantity] = useState<number>(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
     if (!productName.trim()) {
       showToast('Vui lòng nhập tên sản phẩm / thiết bị!', 'error');
@@ -58,37 +66,109 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
       return;
     }
 
-    const generatedSku = sku.trim() || `CUSTOM-${Date.now().toString().slice(-6)}`;
-    const randomTempPartId = 900000 + Math.floor(Math.random() * 99999);
+    const validQty = quantity > 0 ? quantity : 1;
+    const generatedSku = (sku.trim() || `SP-${Date.now().toString().slice(-6)}`).toUpperCase();
+    const fullProductName = `${productName.trim()}${specs.trim() ? ` (${specs.trim()})` : ''}`;
 
-    const newItem: CustomSaleItem = {
-      part_id: randomTempPartId,
-      product_name: `${productName.trim()}${specs.trim() ? ` (${specs.trim()})` : ''}`,
-      sku: generatedSku.toUpperCase(),
-      item_type: itemType,
-      quantity: quantity > 0 ? quantity : 1,
-      max_stock: 999,
-      cost_price: Number(costPrice) || 0,
-      unit_price: Number(unitPrice),
-      serial_number: serialNumber.trim(),
-      warranty_months: warrantyMonths,
-      return_days: returnDays,
-      specs: specs.trim() || undefined,
-    };
+    setIsSubmitting(true);
+    try {
+      if (createInInventory && itemType !== 'custom') {
+        const categoryName =
+          itemType === 'device'
+            ? 'Thiết bị / Máy nguyên chiếc'
+            : itemType === 'accessory'
+            ? 'Phụ kiện / Sạc cáp'
+            : 'Linh kiện đặc thù';
 
-    onAddCustomItem(newItem);
-    showToast(`Đã thêm thiết bị "${newItem.product_name}" vào giỏ hàng!`, 'success');
-    onClose();
+        // 1. Create Part on server to get authoritative part_id
+        const createdPart = await StorageService.addPartAsync({
+          sku: generatedSku,
+          name: fullProductName,
+          category_id: itemType === 'device' ? 1 : itemType === 'accessory' ? 3 : 2,
+          category_name: categoryName,
+          compatible_models: specs.trim() || undefined,
+          cost_price: Number(costPrice) || 0,
+          selling_price: Number(unitPrice),
+          stock_quantity: 0,
+          min_stock_alert: 1,
+          location: 'Quầy POS',
+        });
 
-    // Reset
-    setProductName('');
-    setSku('');
-    setSerialNumber('');
-    setSpecs('');
-    setCostPrice(0);
-    setUnitPrice('');
-    setWarrantyMonths(6);
-    setQuantity(1);
+        // 2. Create initial InventoryBatch on server so FIFO deduction works with real batch_id
+        const createdBatch = await StorageService.addInventoryBatchAsync({
+          part_id: createdPart.id,
+          part_name: createdPart.name,
+          sku: createdPart.sku,
+          import_quantity: validQty,
+          cost_price: Number(costPrice) || 0,
+          selling_price: Number(unitPrice),
+          notes: `Nhập nhanh từ màn hình POS Bán lẻ${serialNumber.trim() ? ` (S/N: ${serialNumber.trim()})` : ''}`,
+        });
+
+        const newItem: CustomSaleItem = {
+          part_id: createdPart.id,
+          batch_id: createdBatch.id,
+          batch_code: createdBatch.batch_code,
+          product_name: createdPart.name,
+          sku: createdPart.sku,
+          item_type: itemType,
+          quantity: validQty,
+          max_stock: validQty,
+          cost_price: Number(costPrice) || 0,
+          unit_price: Number(unitPrice),
+          serial_number: serialNumber.trim(),
+          warranty_months: warrantyMonths,
+          return_days: returnDays,
+          specs: specs.trim() || undefined,
+        };
+
+        onAddCustomItem(newItem);
+        showToast(
+          `Đã tạo mã hàng ${createdPart.sku} (Lô ${createdBatch.batch_code}) & thêm vào giỏ hàng!`,
+          'success'
+        );
+      } else {
+        if (!canSellUntrackedCustom) {
+          showToast(
+            'Chỉ Quản trị viên hoặc Quản lý mới được bán mặt hàng tự nhập không qua kho!',
+            'error'
+          );
+          return;
+        }
+
+        const newItem: CustomSaleItem = {
+          part_id: undefined,
+          product_name: fullProductName,
+          sku: generatedSku,
+          item_type: 'custom',
+          quantity: validQty,
+          max_stock: 999,
+          cost_price: Number(costPrice) || 0,
+          unit_price: Number(unitPrice),
+          serial_number: serialNumber.trim(),
+          warranty_months: warrantyMonths,
+          return_days: returnDays,
+          specs: specs.trim() || undefined,
+        };
+
+        onAddCustomItem(newItem);
+        showToast(`Đã thêm mặt hàng tự nhập "${newItem.product_name}" vào giỏ hàng!`, 'success');
+      }
+
+      onClose();
+      setProductName('');
+      setSku('');
+      setSerialNumber('');
+      setSpecs('');
+      setCostPrice(0);
+      setUnitPrice('');
+      setWarrantyMonths(6);
+      setQuantity(1);
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể tạo sản phẩm mới. Vui lòng thử lại!', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -102,7 +182,7 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-base text-white">Thêm Thiết Bị / Hàng Bán Ngoài Danh Mục</h3>
-              <p className="text-xs text-slate-400">Bán lẻ laptop cũ/mới, máy nguyên chiếc, phụ kiện nhập lẻ</p>
+              <p className="text-xs text-slate-400">Tự động khởi tạo mã kho + lô nhập hoặc bán dịch vụ ngoài danh mục</p>
             </div>
           </div>
 
@@ -139,6 +219,24 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             ))}
           </div>
 
+          {/* Inventory Tracking Mode */}
+          <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl space-y-1.5 text-xs">
+            <label className="flex items-center gap-2 font-bold text-indigo-950 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createInInventory}
+                onChange={(e) => setCreateInInventory(e.target.checked)}
+                className="rounded border-indigo-300 text-indigo-600"
+              />
+              <span>Tự động tạo mã hàng & lô nhập kho (Quản lý tồn kho FIFO)</span>
+            </label>
+            <p className="text-[11px] text-slate-600 pl-6">
+              {createInInventory
+                ? 'Hệ thống sẽ tạo linh kiện/máy mới kèm lô nhập kho tương ứng trước khi đưa vào giỏ hàng.'
+                : 'Bán trực tiếp không trừ kho (item_type: custom — Chỉ dành cho Quản trị viên / Quản lý).'}
+            </p>
+          </div>
+
           {/* Product Name */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -154,16 +252,16 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Serial / IMEI */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Số Serial / IMEI <span className="text-rose-500">* (Cần thiết để xuất phiếu bảo hành)</span>
+                Số Serial / IMEI <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 required
-                placeholder="Nhập mã Serial / IMEI máy..."
+                placeholder="Nhập S/N hoặc IMEI..."
                 value={serialNumber}
                 onChange={(e) => setSerialNumber(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold focus:bg-white focus:border-indigo-500 focus:outline-hidden"
@@ -172,13 +270,25 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
 
             {/* Custom SKU */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Mã SKU / Mã quản lý</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Mã SKU</label>
               <input
                 type="text"
-                placeholder="Tự động tạo nếu để trống..."
+                placeholder="Tự tạo nếu trống..."
                 value={sku}
                 onChange={(e) => setSku(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono uppercase focus:bg-white focus:border-indigo-500 focus:outline-hidden"
+              />
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Số lượng</label>
+              <input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold focus:bg-white focus:border-indigo-500 focus:outline-hidden"
               />
             </div>
           </div>
@@ -195,7 +305,6 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             />
           </div>
 
-          {/* Financials & Warranty */}
           {/* Financials, Warranty & Return Window */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
             <div>
@@ -226,7 +335,7 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">Thời gian BH (Tùy chỉnh số tháng)</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">Thời gian BH (Tháng)</label>
               <div className="space-y-1">
                 <div className="flex items-center gap-1">
                   <input
@@ -236,7 +345,6 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
                     value={warrantyMonths}
                     onChange={(e) => setWarrantyMonths(Math.max(0, parseInt(e.target.value) || 0))}
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-indigo-700 focus:border-indigo-500 focus:outline-hidden"
-                    placeholder="Nhập số tháng..."
                   />
                   <span className="text-xs font-bold text-slate-500 shrink-0">tháng</span>
                 </div>
@@ -260,7 +368,7 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">Thời hạn đổi trả (Tùy chỉnh số ngày)</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">Thời hạn đổi trả (Ngày)</label>
               <div className="space-y-1">
                 <div className="flex items-center gap-1">
                   <input
@@ -270,7 +378,6 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
                     value={returnDays}
                     onChange={(e) => setReturnDays(Math.max(0, parseInt(e.target.value) || 0))}
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-amber-700 focus:border-amber-500 focus:outline-hidden"
-                    placeholder="Nhập số ngày..."
                   />
                   <span className="text-xs font-bold text-slate-500 shrink-0">ngày</span>
                 </div>
@@ -305,10 +412,11 @@ export const CustomItemModal: React.FC<CustomItemModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl shadow-md shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>Thêm Vào Giỏ Hàng</span>
+              <span>{isSubmitting ? 'Đang khởi tạo...' : 'Thêm Vào Giỏ Hàng'}</span>
             </button>
           </div>
         </form>

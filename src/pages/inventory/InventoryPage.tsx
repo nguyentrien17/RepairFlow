@@ -204,7 +204,9 @@ export const InventoryPage: React.FC = () => {
       (b.supplier_name && b.supplier_name.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleSavePart = (e: React.FormEvent) => {
+  const [isSubmittingInventory, setIsSubmittingInventory] = useState(false);
+
+  const handleSavePart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sku.trim() || !name.trim()) {
       showToast('Vui lòng điền mã SKU và tên linh kiện!', 'error');
@@ -212,145 +214,166 @@ export const InventoryPage: React.FC = () => {
     }
 
     const selectedSupp = suppliers.find((s) => s.id === Number(supplierId));
-
-    if (editingPart) {
-      StorageService.updatePart(editingPart.id, {
-        sku: sku.trim().toUpperCase(),
-        name: name.trim(),
-        category_name: categoryName,
-        supplier_id: selectedSupp ? selectedSupp.id : undefined,
-        supplier_name: selectedSupp ? selectedSupp.name : undefined,
-        compatible_models: compatible.trim() || undefined,
-        cost_price: Number(costPrice),
-        selling_price: Number(sellingPrice),
-        stock_quantity: Number(stockQty),
-        min_stock_alert: Number(minAlert),
-        location: location.trim(),
-      });
-      showToast(`Đã cập nhật linh kiện ${name.trim()}!`, 'success');
-    } else {
-      const newPart = StorageService.addPart({
-        sku: sku.trim().toUpperCase(),
-        name: name.trim(),
-        category_id: 1,
-        category_name: categoryName,
-        supplier_id: selectedSupp ? selectedSupp.id : undefined,
-        supplier_name: selectedSupp ? selectedSupp.name : undefined,
-        compatible_models: compatible.trim() || undefined,
-        cost_price: Number(costPrice),
-        selling_price: Number(sellingPrice),
-        stock_quantity: Number(stockQty),
-        min_stock_alert: Number(minAlert),
-        location: location.trim(),
-      });
-
-      // Also auto create initial batch for this part if stockQty > 0
-      if (stockQty > 0) {
-        const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        StorageService.addInventoryBatch({
-          part_id: newPart.id,
-          part_name: newPart.name,
-          sku: newPart.sku,
-          supplier_id: selectedSupp?.id,
-          supplier_name: selectedSupp?.name,
-          import_quantity: stockQty,
+    setIsSubmittingInventory(true);
+    try {
+      if (editingPart) {
+        await StorageService.updatePartAsync(editingPart.id, {
+          sku: sku.trim().toUpperCase(),
+          name: name.trim(),
+          category_name: categoryName,
+          supplier_id: selectedSupp ? selectedSupp.id : undefined,
+          supplier_name: selectedSupp ? selectedSupp.name : undefined,
+          compatible_models: compatible.trim() || undefined,
           cost_price: Number(costPrice),
           selling_price: Number(sellingPrice),
-          import_date: new Date().toISOString().slice(0, 10),
-          notes: 'Lô đợt khởi tạo ban đầu khi tạo mã linh kiện mới',
-          custom_batch_code: `LOT-${todayStr}-INIT`,
+          min_stock_alert: Number(minAlert),
+          location: location.trim(),
         });
+        showToast(`Đã cập nhật linh kiện ${name.trim()}!`, 'success');
+      } else {
+        const newPart = await StorageService.addPartAsync({
+          sku: sku.trim().toUpperCase(),
+          name: name.trim(),
+          category_id: 1,
+          category_name: categoryName,
+          supplier_id: selectedSupp ? selectedSupp.id : undefined,
+          supplier_name: selectedSupp ? selectedSupp.name : undefined,
+          compatible_models: compatible.trim() || undefined,
+          cost_price: Number(costPrice),
+          selling_price: Number(sellingPrice),
+          stock_quantity: 0,
+          min_stock_alert: Number(minAlert),
+          location: location.trim(),
+        });
+
+        // Also auto create initial batch for this part if stockQty > 0
+        if (stockQty > 0) {
+          const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+          await StorageService.addInventoryBatchAsync({
+            part_id: newPart.id,
+            part_name: newPart.name,
+            sku: newPart.sku,
+            supplier_id: selectedSupp?.id,
+            supplier_name: selectedSupp?.name,
+            import_quantity: stockQty,
+            cost_price: Number(costPrice),
+            selling_price: Number(sellingPrice),
+            import_date: new Date().toISOString().slice(0, 10),
+            notes: 'Lô đợt khởi tạo ban đầu khi tạo mã linh kiện mới',
+            custom_batch_code: `LOT-${todayStr}-${newPart.id}-INIT`,
+          });
+        }
+
+        showToast(`Đã thêm linh kiện ${newPart.name} và tạo lô kho ban đầu!`, 'success');
       }
 
-      showToast(`Đã thêm linh kiện ${newPart.name} và tạo lô kho ban đầu!`, 'success');
+      setShowAddPartModal(false);
+      reloadData();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể lưu thông tin linh kiện!', 'error');
+    } finally {
+      setIsSubmittingInventory(false);
     }
-
-    setShowAddPartModal(false);
-    reloadData();
   };
 
-  const handleSaveSupplier = (e: React.FormEvent) => {
+  const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!suppName.trim() || !suppPhone.trim()) {
       showToast('Vui lòng nhập tên nhà cung cấp và số điện thoại!', 'error');
       return;
     }
 
-    if (editingSupplier) {
-      StorageService.updateSupplier(editingSupplier.id, {
-        name: suppName.trim(),
-        phone: suppPhone.trim(),
-        email: suppEmail.trim() || undefined,
-        address: suppAddress.trim() || undefined,
-      });
-      showToast(`Đã cập nhật nhà cung cấp ${suppName.trim()}!`, 'success');
-    } else {
-      const newSupp = StorageService.addSupplier({
-        name: suppName.trim(),
-        phone: suppPhone.trim(),
-        email: suppEmail.trim() || undefined,
-        address: suppAddress.trim() || undefined,
-        is_active: true,
-      });
-      showToast(`Đã thêm nhà cung cấp ${newSupp.name}!`, 'success');
-    }
+    setIsSubmittingInventory(true);
+    try {
+      if (editingSupplier) {
+        await StorageService.updateSupplierAsync(editingSupplier.id, {
+          name: suppName.trim(),
+          phone: suppPhone.trim(),
+          email: suppEmail.trim() || undefined,
+          address: suppAddress.trim() || undefined,
+        });
+        showToast(`Đã cập nhật nhà cung cấp ${suppName.trim()}!`, 'success');
+      } else {
+        const newSupp = await StorageService.addSupplierAsync({
+          name: suppName.trim(),
+          phone: suppPhone.trim(),
+          email: suppEmail.trim() || undefined,
+          address: suppAddress.trim() || undefined,
+          is_active: true,
+        });
+        showToast(`Đã thêm nhà cung cấp ${newSupp.name}!`, 'success');
+      }
 
-    setShowSupplierModal(false);
-    reloadData();
+      setShowSupplierModal(false);
+      reloadData();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể lưu nhà cung cấp!', 'error');
+    } finally {
+      setIsSubmittingInventory(false);
+    }
   };
 
-  const handleDeleteSupplier = (supp: Supplier) => {
+  const handleDeleteSupplier = async (supp: Supplier) => {
     const linkedPartsCount = parts.filter((p) => p.supplier_id === supp.id).length;
     if (linkedPartsCount > 0) {
       showToast(`Không thể xóa nhà cung cấp này vì đang có ${linkedPartsCount} linh kiện liên kết!`, 'error');
       return;
     }
     if (confirm(`Bạn có chắc chắn muốn xóa nhà cung cấp ${supp.name}?`)) {
-      StorageService.deleteSupplier(supp.id);
-      showToast(`Đã xóa nhà cung cấp ${supp.name}!`, 'success');
-      reloadData();
+      try {
+        await StorageService.deleteSupplierAsync(supp.id);
+        showToast(`Đã xóa nhà cung cấp ${supp.name}!`, 'success');
+        reloadData();
+      } catch (err: any) {
+        showToast(err?.message || 'Không thể xóa nhà cung cấp!', 'error');
+      }
     }
   };
 
-  const handleReceiptStock = (e: React.FormEvent) => {
+  const handleReceiptStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPartForReceipt || receiptQty <= 0) return;
 
     const selectedSupp = suppliers.find((s) => s.id === Number(batchSupplierId));
+    setIsSubmittingInventory(true);
+    try {
+      await StorageService.addInventoryBatchAsync({
+        part_id: selectedPartForReceipt.id,
+        part_name: selectedPartForReceipt.name,
+        sku: selectedPartForReceipt.sku,
+        supplier_id: selectedSupp?.id,
+        supplier_name: selectedSupp?.name,
+        import_quantity: Number(receiptQty),
+        cost_price: Number(batchCostPrice),
+        selling_price: Number(batchSellingPrice),
+        import_date: batchImportDate,
+        notes: batchNotes.trim() || undefined,
+        custom_batch_code: batchCode.trim() || undefined,
+      });
 
-    StorageService.addInventoryBatch({
-      part_id: selectedPartForReceipt.id,
-      part_name: selectedPartForReceipt.name,
-      sku: selectedPartForReceipt.sku,
-      supplier_id: selectedSupp?.id,
-      supplier_name: selectedSupp?.name,
-      import_quantity: Number(receiptQty),
-      cost_price: Number(batchCostPrice),
-      selling_price: Number(batchSellingPrice),
-      import_date: batchImportDate,
-      notes: batchNotes.trim() || undefined,
-      custom_batch_code: batchCode.trim() || undefined,
-    });
-
-    showToast(`Đã nhập lô đợt mới (+${receiptQty} cái) cho ${selectedPartForReceipt.name}!`, 'success');
-    setShowReceiptModal(false);
-    setSelectedPartForReceipt(null);
-    reloadData();
+      showToast(`Đã nhập lô đợt mới (+${receiptQty} cái) cho ${selectedPartForReceipt.name}!`, 'success');
+      setShowReceiptModal(false);
+      setSelectedPartForReceipt(null);
+      reloadData();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể nhập kho đợt mới!', 'error');
+    } finally {
+      setIsSubmittingInventory(false);
+    }
   };
 
-  const handleSaveBatchEdit = (e: React.FormEvent) => {
+  const handleSaveBatchEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingBatch) return;
 
     const supp = suppliers.find((s) => s.id === Number(editBatchSupplierId));
-
+    setIsSubmittingInventory(true);
     try {
-      StorageService.updateInventoryBatch(editingBatch.id, {
+      await StorageService.updateInventoryBatchAsync(editingBatch.id, {
         batch_code: editBatchCode.trim() || editingBatch.batch_code,
         supplier_id: supp?.id,
         supplier_name: supp?.name,
         import_quantity: Number(editBatchImportQty),
-        remaining_quantity: Number(editBatchRemainingQty),
         cost_price: Number(editBatchCostPrice),
         selling_price: Number(editBatchSellingPrice),
         import_date: editBatchImportDate,
@@ -362,15 +385,21 @@ export const InventoryPage: React.FC = () => {
       setEditingBatch(null);
       reloadData();
     } catch (err: any) {
-      showToast(err.message || 'Lỗi khi cập nhật đợt nhập kho', 'error');
+      showToast(err?.message || 'Lỗi khi cập nhật đợt nhập kho', 'error');
+    } finally {
+      setIsSubmittingInventory(false);
     }
   };
 
-  const handleDeleteBatch = (batch: InventoryBatch) => {
+  const handleDeleteBatch = async (batch: InventoryBatch) => {
     if (confirm(`Bạn có chắc chắn muốn xóa đợt nhập ${batch.batch_code} của linh kiện "${batch.part_name}"?`)) {
-      StorageService.deleteInventoryBatch(batch.id);
-      showToast(`Đã xóa đợt nhập kho ${batch.batch_code}!`, 'success');
-      reloadData();
+      try {
+        await StorageService.deleteInventoryBatchAsync(batch.id);
+        showToast(`Đã xóa đợt nhập kho ${batch.batch_code}!`, 'success');
+        reloadData();
+      } catch (err: any) {
+        showToast(err?.message || 'Không thể xóa đợt nhập kho!', 'error');
+      }
     }
   };
 

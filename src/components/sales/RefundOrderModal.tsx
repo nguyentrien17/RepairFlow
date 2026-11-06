@@ -32,8 +32,8 @@ export const RefundOrderModal: React.FC<RefundOrderModalProps> = ({
   const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
   const isOverdueReturn = elapsedDays > returnPolicyDays;
 
-  // Maximum allowed refund amount (cannot exceed actual paid amount or order final amount)
-  const maxRefundAllowed = Math.max(0, order.paid_amount || order.final_amount);
+  // Maximum allowed refund amount (strictly limited to actual paid amount minus any previous refund)
+  const maxRefundAllowed = Math.max(0, Number(order.paid_amount || 0) - Number(order.refund_amount || 0));
 
   const [refundReasonType, setRefundReasonType] = useState<string>('Khách thay đổi nhu cầu');
   const [customReason, setCustomReason] = useState<string>('');
@@ -54,7 +54,7 @@ export const RefundOrderModal: React.FC<RefundOrderModalProps> = ({
     }
   };
 
-  const handleProcessRefund = (e: React.FormEvent) => {
+  const handleProcessRefund = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (isBlockedDueToOverdue) {
@@ -67,13 +67,13 @@ export const RefundOrderModal: React.FC<RefundOrderModalProps> = ({
       return;
     }
 
-    if (refundAmount < 0) {
-      showToast('Số tiền hoàn trả không hợp lệ (phải >= 0 đ)!', 'error');
+    if (refundAmount <= 0) {
+      showToast('Số tiền hoàn trả phải lớn hơn 0 đ!', 'error');
       return;
     }
 
     if (refundAmount > maxRefundAllowed) {
-      showToast(`Số tiền hoàn trả (${formatVND(refundAmount)}) không được vượt quá số tiền thực thu của hóa đơn (${formatVND(maxRefundAllowed)})!`, 'error');
+      showToast(`Số tiền hoàn trả (${formatVND(refundAmount)}) không được vượt quá số tiền thực thu còn lại của hóa đơn (${formatVND(maxRefundAllowed)})!`, 'error');
       setRefundAmount(maxRefundAllowed);
       return;
     }
@@ -83,7 +83,7 @@ export const RefundOrderModal: React.FC<RefundOrderModalProps> = ({
         ? `${finalReason} (Duyệt đổi trả quá hạn ${elapsedDays}/${returnPolicyDays} ngày bởi ${currentUser?.full_name})`
         : finalReason;
 
-      const updated = StorageService.refundRetailOrder(order.id, {
+      const updated = await StorageService.refundRetailOrderAsync(order.id, {
         refundReason: fullReasonWithTimeframe,
         refundAmount: refundAmount,
         returnStockToInventory: returnStock,

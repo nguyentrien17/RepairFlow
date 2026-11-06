@@ -96,6 +96,26 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   const [selectedNextStatus, setSelectedNextStatus] = useState<RepairStatus>('Diagnosing');
   const [statusNote, setStatusNote] = useState('');
   const [showSecretPassword, setShowSecretPassword] = useState(false);
+  const [decryptedDevicePass, setDecryptedDevicePass] = useState<string>('');
+  const [isLoadingDevicePass, setIsLoadingDevicePass] = useState(false);
+
+  const handleToggleDevicePassword = async () => {
+    if (!ticket) return;
+    if (showSecretPassword) {
+      setShowSecretPassword(false);
+      return;
+    }
+    setIsLoadingDevicePass(true);
+    try {
+      const pass = await StorageService.getTicketDevicePassword(ticket.id);
+      setDecryptedDevicePass(pass || decryptPassword(ticket.device_password_hint || '') || '');
+      setShowSecretPassword(true);
+    } catch (err: any) {
+      showToast(err?.message || 'Không có quyền hoặc không thể giải mã mật khẩu thiết bị!', 'error');
+    } finally {
+      setIsLoadingDevicePass(false);
+    }
+  };
 
   // Diagnostics State (UC-11)
   const diagnostics = StorageService.getDiagnostics(ticketId);
@@ -345,7 +365,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   };
 
   // Confirmed by User with Responsibility Sign-Off
-  const handleConfirmStatusChange = (data: {
+  const handleConfirmStatusChange = async (data: {
     targetStatus: RepairStatus;
     notes: string;
     assignedTechId?: number;
@@ -369,87 +389,77 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       updates.cancellation_reason = data.cancellationReason;
     }
 
-    // Save ticket update
-    StorageService.updateTicket(ticket.id, updates);
-
     const roleStr = currentUser?.role || 'Nhân viên';
     const nameStr = currentUser?.full_name || 'Người dùng';
     const noteDetails = `[Cam kết trách nhiệm] ${data.notes}${
       data.debtApproved ? ' • Phê duyệt cho khách nợ' : ''
     }${data.returnCondition ? ` • Tình trạng hoàn trả: ${data.returnCondition}` : ''}`;
 
-    // Add explicit status history log
-    StorageService.addStatusHistory(
-      ticket.id,
-      ticket.status,
-      data.targetStatus,
-      `${nameStr} (${roleStr})`,
-      noteDetails,
-      roleStr,
-      `Cam kết trách nhiệm bởi ${nameStr}`
-    );
+    try {
+      await StorageService.updateTicketAsync(ticket.id, updates, isAdminOverride, {
+        note: noteDetails,
+      });
 
-    // Add system audit log
-    StorageService.addAuditLog(
-      'STATUS_TRANSITION',
-      'repair_tickets',
-      ticket.ticket_code,
-      `Chuyển trạng thái từ [${STATUS_CONFIG[ticket.status].label}] sang [${STATUS_CONFIG[data.targetStatus].label}]. Người chịu trách nhiệm: ${nameStr} (${roleStr}). Ghi chú: ${data.notes}`,
-      nameStr
-    );
-
-    showToast(
-      `Đã xác nhận trách nhiệm & chuyển trạng thái sang: ${STATUS_CONFIG[data.targetStatus].label}`,
-      'success'
-    );
-    setPendingStatus(null);
-    reloadTicket();
+      showToast(
+        `Đã xác nhận trách nhiệm & chuyển trạng thái sang: ${STATUS_CONFIG[data.targetStatus].label}`,
+        'success'
+      );
+      setPendingStatus(null);
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể chuyển trạng thái phiếu sửa chữa!', 'error');
+    }
   };
 
   // Assign Technician (UC-10)
-  const handleAssignTech = (techId: number) => {
+  const handleAssignTech = async (techId: number) => {
     const tech = technicians.find((t) => t.id === techId);
     if (tech) {
-      StorageService.updateTicket(ticket.id, {
-        primary_technician_id: tech.id,
-        primary_technician_name: tech.full_name,
-      });
-      StorageService.addAuditLog(
-        'ASSIGN_TECHNICIAN',
-        'repair_tickets',
-        ticket.ticket_code,
-        `Phân công kỹ thuật viên phụ trách: ${tech.full_name}`,
-        currentUser?.full_name
-      );
-      showToast(`Đã phân công cho kỹ thuật viên: ${tech.full_name}`, 'success');
-      reloadTicket();
+      try {
+        await StorageService.updateTicketAsync(ticket.id, {
+          primary_technician_id: tech.id,
+          primary_technician_name: tech.full_name,
+        });
+        showToast(`Đã phân công cho kỹ thuật viên: ${tech.full_name}`, 'success');
+        reloadTicket();
+      } catch (err: any) {
+        showToast(err?.message || 'Không thể phân công kỹ thuật viên!', 'error');
+      }
     }
   };
 
   // Save Diagnostic (UC-11)
-  const handleSaveDiagnostic = (e: React.FormEvent) => {
+  const handleSaveDiagnostic = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rootCause.trim() || !solution.trim()) {
       showToast('Vui lòng điền nguyên nhân lỗi và phương án xử lý!', 'error');
       return;
     }
-    StorageService.addDiagnostic({
-      ticket_id: ticket.id,
-      technician_id: currentUser?.id || 4,
-      technician_name: currentUser?.full_name || 'Kỹ thuật viên',
-      root_cause: rootCause.trim(),
-      proposed_solution: solution.trim(),
-      estimated_cost: Number(estCost),
-      estimated_hours: Number(estHours),
-    });
-    // Advance status to Waiting_Approval
-    StorageService.updateTicket(ticket.id, { status: 'Waiting_Approval' });
-    showToast('Đã lưu kết quả chẩn đoán và chuyển sang Chờ duyệt báo giá!', 'success');
-    reloadTicket();
+    try {
+      await StorageService.addDiagnosticAsync({
+        ticket_id: ticket.id,
+        technician_id: currentUser?.id || 4,
+        technician_name: currentUser?.full_name || 'Kỹ thuật viên',
+        root_cause: rootCause.trim(),
+        proposed_solution: solution.trim(),
+        estimated_cost: Number(estCost),
+        estimated_hours: Number(estHours),
+      });
+      if (ticket.status === 'Received' || ticket.status === 'Diagnosing') {
+        await StorageService.transitionTicketAsync(ticket.id, 'Waiting_Approval', {
+          note: 'Đã lưu kết quả chẩn đoán kỹ thuật, chờ lập/duyệt báo giá',
+          is_override: isAdminOverride,
+        });
+      }
+      showToast('Đã lưu kết quả chẩn đoán và chuyển sang Chờ duyệt báo giá!', 'success');
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể lưu kết quả chẩn đoán!', 'error');
+    }
   };
 
   // Quote Promotion Handlers
-  const handleApplyPromoToQuote = (codeToApply: string) => {
+  const handleApplyPromoToQuote = async (codeToApply: string) => {
     const clean = codeToApply.trim().toUpperCase();
     if (!clean) {
       setPromoMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn mã ưu đãi!' });
@@ -460,13 +470,13 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       setPromoMessage({ type: 'error', text: 'Vui lòng nhập các hạng mục sửa chữa có giá trị trước khi áp dụng mã!' });
       return;
     }
-    const res = StorageService.validateAndCalculatePromotion(clean, subtotal);
-    if (res.valid) {
-      setSelectedPromoCode(res.promotion!.code);
-      setCustomPromoInput(res.promotion!.code);
+    const res = await StorageService.validatePromotionAsync(clean, subtotal);
+    if (res.valid && res.promotion) {
+      setSelectedPromoCode(res.promotion.code);
+      setCustomPromoInput(res.promotion.code);
       setQuoteDiscount(res.discountAmount);
       setPromoMessage({ type: 'success', text: res.message || 'Áp dụng mã ưu đãi thành công!' });
-      showToast(`Áp dụng mã "${res.promotion!.code}": Giảm ${formatVND(res.discountAmount)}`, 'success');
+      showToast(`Áp dụng mã "${res.promotion.code}": Giảm ${formatVND(res.discountAmount)}`, 'success');
     } else {
       setPromoMessage({ type: 'error', text: res.message || 'Mã ưu đãi không hợp lệ.' });
       showToast(res.message || 'Mã ưu đãi không hợp lệ!', 'error');
@@ -481,55 +491,49 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   };
 
   // Create Quote (UC-12)
-  const handleCreateQuote = (e: React.FormEvent) => {
+  const handleCreateQuote = async (e: React.FormEvent) => {
     e.preventDefault();
-    const subtotal = quoteItems.reduce((acc, it) => acc + (it.price * it.qty), 0);
+    const subtotal = quoteItems.reduce((acc, it) => acc + it.price * it.qty, 0);
     const total = Math.max(0, subtotal - Number(quoteDiscount));
 
-    const newQuote = StorageService.addQuote({
-      ticket_id: ticket.id,
-      version: quotes.length + 1,
-      subtotal,
-      discount: Number(quoteDiscount),
-      promotion_code: selectedPromoCode || undefined,
-      total_amount: total,
-      status: 'Sent',
-      created_by_name: currentUser?.full_name || 'Kỹ thuật viên',
-      items: quoteItems.map((it, idx) => ({
-        id: idx + 1,
-        quote_id: 0,
-        item_type: it.type,
-        part_id: it.part_id,
-        batch_id: it.batch_id,
-        batch_code: it.batch_code,
-        name: it.name,
-        quantity: it.qty,
-        unit_price: it.price,
-        labor_fee: 0,
-        subtotal: it.price * it.qty,
-        warranty_months: it.warranty,
-      })),
-    });
+    try {
+      const newQuote = await StorageService.addQuoteAsync({
+        ticket_id: ticket.id,
+        version: quotes.length + 1,
+        subtotal,
+        discount: Number(quoteDiscount),
+        promotion_code: selectedPromoCode || undefined,
+        total_amount: total,
+        status: 'Sent',
+        created_by_name: currentUser?.full_name || 'Kỹ thuật viên',
+        items: quoteItems.map((it, idx) => ({
+          id: idx + 1,
+          quote_id: 0,
+          item_type: it.type,
+          part_id: it.part_id,
+          batch_id: it.batch_id,
+          batch_code: it.batch_code,
+          name: it.name,
+          quantity: it.qty,
+          unit_price: it.price,
+          labor_fee: 0,
+          subtotal: it.price * it.qty,
+          warranty_months: it.warranty,
+        })),
+      });
 
-    if (selectedPromoCode) {
-      StorageService.recordPromotionUsage(selectedPromoCode);
+      showToast(
+        `Đã tạo báo giá ${newQuote.quote_code} v${newQuote.version} (${formatVND(newQuote.total_amount)})!`,
+        'success'
+      );
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể tạo báo giá!', 'error');
     }
-
-    StorageService.updateTicket(ticket.id, {
-      subtotal_amount: subtotal,
-      discount_amount: Number(quoteDiscount),
-      promotion_code: selectedPromoCode || undefined,
-      final_amount: total,
-      debt_amount: Math.max(0, total - ticket.paid_amount),
-      status: 'Waiting_Approval',
-    });
-
-    showToast(`Đã tạo báo giá ${newQuote.quote_code} (${formatVND(total)})!`, 'success');
-    reloadTicket();
   };
 
   // Apply / Change Discount Voucher at Checkout
-  const handleApplyDiscountAtCheckout = (e: React.FormEvent) => {
+  const handleApplyDiscountAtCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticket) return;
 
@@ -541,14 +545,13 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         setModalPromoMessage({ type: 'error', text: 'Vui lòng chọn hoặc nhập mã ưu đãi!' });
         return;
       }
-      const res = StorageService.validateAndCalculatePromotion(modalPromoCode, ticket.subtotal_amount);
-      if (!res.valid) {
+      const res = await StorageService.validatePromotionAsync(modalPromoCode, ticket.subtotal_amount);
+      if (!res.valid || !res.promotion) {
         setModalPromoMessage({ type: 'error', text: res.message || 'Mã ưu đãi không hợp lệ!' });
         return;
       }
       appliedDiscount = res.discountAmount;
-      appliedCode = res.promotion!.code;
-      StorageService.recordPromotionUsage(appliedCode);
+      appliedCode = res.promotion.code;
     } else {
       appliedDiscount = Math.max(0, modalCustomDiscount);
       if (ticket.subtotal_amount > 0 && appliedDiscount > ticket.subtotal_amount) {
@@ -557,83 +560,81 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       }
     }
 
-    const newFinal = Math.max(0, ticket.subtotal_amount - appliedDiscount);
-    const newDebt = Math.max(0, newFinal - ticket.paid_amount);
+    try {
+      await StorageService.updateTicketAsync(ticket.id, {
+        discount_amount: appliedDiscount,
+        promotion_code: appliedCode || ('' as any),
+      });
 
-    StorageService.updateTicket(ticket.id, {
-      discount_amount: appliedDiscount,
-      promotion_code: appliedCode,
-      final_amount: newFinal,
-      debt_amount: newDebt,
-    });
-
-    StorageService.addAuditLog(
-      'APPLY_DISCOUNT',
-      'repair_tickets',
-      ticket.ticket_code,
-      `Cập nhật ưu đãi cho phiếu: Giảm ${formatVND(appliedDiscount)} ${appliedCode ? `(Mã: ${appliedCode})` : '(Giảm trực tiếp)'}`,
-      currentUser?.full_name
-    );
-
-    showToast(`Đã áp dụng mức ưu đãi ${formatVND(appliedDiscount)} thành công!`, 'success');
-    setShowDiscountModal(false);
-    reloadTicket();
+      showToast(`Đã áp dụng mức ưu đãi ${formatVND(appliedDiscount)} thành công!`, 'success');
+      setShowDiscountModal(false);
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể áp dụng ưu đãi!', 'error');
+    }
   };
 
-  const handleRemoveDiscountAtCheckout = () => {
+  const handleRemoveDiscountAtCheckout = async () => {
     if (!ticket) return;
-    const newFinal = ticket.subtotal_amount;
-    const newDebt = Math.max(0, newFinal - ticket.paid_amount);
+    try {
+      await StorageService.updateTicketAsync(ticket.id, {
+        discount_amount: 0,
+        promotion_code: '' as any,
+      });
 
-    StorageService.updateTicket(ticket.id, {
-      discount_amount: 0,
-      promotion_code: undefined,
-      final_amount: newFinal,
-      debt_amount: newDebt,
-    });
-
-    StorageService.addAuditLog(
-      'REMOVE_DISCOUNT',
-      'repair_tickets',
-      ticket.ticket_code,
-      `Hủy bỏ ưu đãi giảm giá của phiếu sửa chữa`,
-      currentUser?.full_name
-    );
-
-    showToast('Đã hủy ưu đãi giảm giá trên phiếu!', 'info');
-    setShowDiscountModal(false);
-    reloadTicket();
+      showToast('Đã hủy ưu đãi giảm giá trên phiếu!', 'info');
+      setShowDiscountModal(false);
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể hủy ưu đãi giảm giá!', 'error');
+    }
   };
 
   // Approve Quote (UC-13)
-  const handleApproveQuote = (quoteId: number) => {
-    StorageService.updateQuoteStatus(quoteId, 'Approved', `Được duyệt bởi ${currentUser?.full_name}`);
-    StorageService.updateTicket(ticket.id, { status: 'In_Progress' });
-    showToast('Khách hàng đã duyệt báo giá. Chuyển sang Đang sửa chữa!', 'success');
-    reloadTicket();
+  const handleApproveQuote = async (quoteId: number) => {
+    try {
+      await StorageService.updateQuoteStatusAsync(
+        quoteId,
+        'Approved',
+        `Được duyệt bởi ${currentUser?.full_name}`
+      );
+      showToast('Khách hàng đã duyệt báo giá. Chuyển sang Đang sửa chữa!', 'success');
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể duyệt báo giá!', 'error');
+    }
   };
 
-  // Save QC Checklist (UC-20)
-  const handleSaveQC = () => {
+  // Save QC Checklist (UC-20) — Item F.4: Strictly await saveChecklistAsync before transitioning to Ready_For_Pickup
+  const handleSaveQC = async () => {
     const allPassed = qcItems.every((it) => it.status === 'Pass' || it.status === 'NA');
-    StorageService.saveChecklist({
-      ticket_id: ticket.id,
-      checked_by_name: currentUser?.full_name || 'QC Inspector',
-      is_passed: allPassed,
-      items: qcItems,
-    });
+    try {
+      const savedChecklist = await StorageService.saveChecklistAsync({
+        ticket_id: ticket.id,
+        checked_by_name: currentUser?.full_name || 'QC Inspector',
+        is_passed: allPassed,
+        items: qcItems,
+      });
 
-    if (allPassed) {
-      StorageService.updateTicket(ticket.id, { status: 'Ready_For_Pickup' });
-      showToast('Kiểm tra chất lượng ĐẠT 100%! Phiếu đã sẵn sàng giao khách.', 'success');
-    } else {
-      showToast('Có mục chưa đạt yêu cầu kiểm tra! Vui lòng hoàn thiện kỹ thuật.', 'error');
+      if (savedChecklist.is_passed) {
+        if (ticket.status !== 'Ready_For_Pickup' && ticket.status !== 'Delivered') {
+          await StorageService.transitionTicketAsync(ticket.id, 'Ready_For_Pickup', {
+            note: 'Kiểm tra chất lượng QC đạt 100%, sẵn sàng bàn giao máy',
+            is_override: isAdminOverride,
+          });
+        }
+        showToast('Kiểm tra chất lượng ĐẠT 100%! Phiếu đã sẵn sàng giao khách.', 'success');
+      } else {
+        showToast('Đã lưu biên bản QC. Có mục chưa đạt yêu cầu kiểm tra!', 'error');
+      }
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể lưu biên bản kiểm tra chất lượng QC!', 'error');
     }
-    reloadTicket();
   };
 
   // Payment (UC-21)
-  const handleAddPayment = (e: React.FormEvent) => {
+  const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (payAmount <= 0) {
       showToast('Vui lòng nhập số tiền thanh toán lớn hơn 0!', 'error');
@@ -653,47 +654,56 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       return;
     }
 
-    const payment = StorageService.addPayment({
-      ticket_id: ticket.id,
-      ticket_code: ticket.ticket_code,
-      customer_name: ticket.customer_name,
-      amount: Number(payAmount),
-      payment_method: payMethod,
-      payment_type: payType,
-      transaction_ref: payRef.trim() || undefined,
-      cashier_name: currentUser?.full_name || 'Lễ tân / Thu ngân',
-      notes: payNote.trim() || undefined,
-    });
+    try {
+      const payment = await StorageService.addPaymentAsync({
+        ticket_id: ticket.id,
+        ticket_code: ticket.ticket_code,
+        customer_name: ticket.customer_name,
+        amount: Number(payAmount),
+        payment_method: payMethod,
+        payment_type: payType,
+        transaction_ref: payRef.trim() || undefined,
+        cashier_name: currentUser?.full_name || 'Lễ tân / Thu ngân',
+        notes: payNote.trim() || undefined,
+      });
 
-    showToast(`Đã thu ${formatVND(payment.amount)} thành công! Mã phiếu thu: ${payment.payment_code}`, 'success');
-    reloadTicket();
+      showToast(
+        `Đã thu ${formatVND(payment.amount)} thành công! Mã phiếu thu: ${payment.payment_code}`,
+        'success'
+      );
+      reloadTicket();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể ghi nhận thanh toán!', 'error');
+    }
   };
 
-  // Simulate Bank Webhook Auto-Payment (SePAY / Casso / Bank)
-  const handleSimulateWebhook = () => {
+  // Item D.3: Simulate Bank Webhook Auto-Payment via Server Endpoint (/api/dev/simulate-webhook)
+  const handleSimulateWebhook = async () => {
     if (!ticket) return;
-    const amountToPay = ticket.debt_amount > 0 ? ticket.debt_amount : (ticket.final_amount || 850000);
+    const amountToPay = ticket.debt_amount > 0 ? ticket.debt_amount : ticket.final_amount || 850000;
     setIsSimulatingWebhook(true);
-    setTimeout(() => {
-      setIsSimulatingWebhook(false);
-      const res = StorageService.processPaymentWebhook({
+    try {
+      const res = await StorageService.simulateWebhookAsync({
         amount: amountToPay,
         content: `${ticket.ticket_code} CK DICH VU`,
-        transaction_id: `MBFT${Date.now().toString().slice(-6)}`,
-        bank_brand: settings.bank_name || 'MB Bank',
-        gateway_provider: settings.payment_gateway_provider?.toUpperCase() || 'SEPAY',
+        transaction_ref: `MBFT${Date.now().toString().slice(-8)}`,
+        gateway_provider: settings.payment_gateway_provider || 'sepay',
         payment_method: 'Bank_Transfer',
       });
-      if (res.success) {
+      if (res.processed && res.matched) {
         reloadTicket();
         showToast(
-          `🔔 TING TING! Nhận tự động ${formatVND(amountToPay)} từ MB Bank qua Webhook. Đã cập nhật phiếu thu & xóa công nợ!`,
+          `🔔 TING TING! Nhận tự động ${formatVND(amountToPay)} qua Webhook. Đã cập nhật phiếu thu & xóa công nợ!`,
           'success'
         );
       } else {
-        showToast(res.message, 'error');
+        showToast(res.reason || 'Không tìm thấy phiếu khớp với nội dung Webhook.', 'error');
       }
-    }, 1200);
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể giả lập Webhook thanh toán!', 'error');
+    } finally {
+      setIsSimulatingWebhook(false);
+    }
   };
 
   // Push command to SmartPOS & Simulate Customer Card Tap
@@ -702,59 +712,79 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
     setShowSmartPosModal(true);
     setTimeout(() => {
       setSmartPosStep('waiting_card');
-    }, 1000);
+    }, 800);
   };
 
-  const handleSimulateCardPayment = (cardType: 'visa' | 'napas' | 'apple_pay') => {
+  const handleSimulateCardPayment = async (cardType: 'visa' | 'napas' | 'apple_pay') => {
     if (!ticket) return;
     setSmartPosCardType(cardType);
     setSmartPosStep('processing');
-    setTimeout(() => {
-      const cardLabel =
-        cardType === 'visa'
-          ? 'Visa Contactless **** 6886'
-          : cardType === 'napas'
-          ? 'Napas Chip ATM **** 3102'
-          : 'Apple Pay (Techcombank)';
-      const amountToPay = ticket.debt_amount > 0 ? ticket.debt_amount : (ticket.final_amount || 850000);
-      StorageService.processPaymentWebhook({
+    const cardLabel =
+      cardType === 'visa'
+        ? 'Visa Contactless **** 6886'
+        : cardType === 'napas'
+        ? 'Napas Chip ATM **** 3102'
+        : 'Apple Pay (Techcombank)';
+    const amountToPay = ticket.debt_amount > 0 ? ticket.debt_amount : ticket.final_amount || 850000;
+    try {
+      const res = await StorageService.simulateWebhookAsync({
         amount: amountToPay,
         content: `${ticket.ticket_code} SMARTPOS`,
-        transaction_id: `POS_${Date.now().toString().slice(-6)}`,
+        transaction_ref: `POS_${Date.now().toString().slice(-8)}`,
+        gateway_provider: 'vnpay_pos',
         payment_method: 'POS_Card',
         card_brand: cardLabel,
-        pos_terminal: settings.pos_terminal_id || 'VNPAY_POS_Q1_01',
       });
-      setSmartPosStep('success');
-      setTimeout(() => {
-        setShowSmartPosModal(false);
-        setSmartPosStep('idle');
-        reloadTicket();
-        showToast(
-          `💳 Giao dịch SmartPOS thành công! Đã tự động thu ${formatVND(amountToPay)} [${cardLabel}].`,
-          'success'
-        );
-      }, 1300);
-    }, 1400);
+      if (res.processed && res.matched) {
+        setSmartPosStep('success');
+        setTimeout(() => {
+          setShowSmartPosModal(false);
+          setSmartPosStep('idle');
+          reloadTicket();
+          showToast(
+            `💳 Giao dịch SmartPOS thành công! Đã tự động thu ${formatVND(amountToPay)} [${cardLabel}].`,
+            'success'
+          );
+        }, 900);
+      } else {
+        setSmartPosStep('waiting_card');
+        showToast(res.reason || 'Không thể xử lý giao dịch SmartPOS!', 'error');
+      }
+    } catch (err: any) {
+      setSmartPosStep('waiting_card');
+      showToast(err?.message || 'Không thể giả lập giao dịch SmartPOS!', 'error');
+    }
   };
 
-  // Handover & Warranty (UC-23, UC-24)
-  const handleDeliverAndWarranty = () => {
+  // Handover & Warranty (UC-23, UC-24) — Item C.4: Atomic transition + warranty creation on server
+  const handleDeliverAndWarranty = async () => {
     if (ticket.debt_amount > 0) {
-      if (!window.confirm(`Thiết bị vẫn còn công nợ ${formatVND(ticket.debt_amount)}. Bạn có chắc chắn muốn bàn giao máy cho khách nợ?`)) {
+      if (
+        !window.confirm(
+          `Thiết bị vẫn còn công nợ ${formatVND(ticket.debt_amount)}. Bạn có chắc chắn muốn bàn giao máy cho khách nợ?`
+        )
+      ) {
         return;
       }
     }
 
-    // Update ticket to Delivered
-    StorageService.updateTicket(ticket.id, { status: 'Delivered' });
+    try {
+      const result = await StorageService.transitionTicketAsync(ticket.id, 'Delivered', {
+        note: `Bàn giao thiết bị cho ${receiverName || ticket.customer_name}. Phụ kiện: ${accessoriesReturned}`,
+        warranty_days: Number(warrantyDays),
+        is_override: isAdminOverride,
+      });
 
-    // Activate warranty
-    const warranty = StorageService.addWarranty(ticket, Number(warrantyDays));
-
-    showToast(`Bàn giao máy thành công! Kích hoạt bảo hành: ${warranty.warranty_code} (${warrantyDays} ngày)`, 'success');
-    reloadTicket();
-    setPrintType('handover');
+      const warrantyCode = result.warranty?.warranty_code || 'BH-MỚI';
+      showToast(
+        `Bàn giao máy thành công! Kích hoạt bảo hành: ${warrantyCode} (${warrantyDays} ngày)`,
+        'success'
+      );
+      reloadTicket();
+      setPrintType('handover');
+    } catch (err: any) {
+      showToast(err?.message || 'Không đủ điều kiện bàn giao máy hoặc kích hoạt bảo hành!', 'error');
+    }
   };
 
   const statusConf = STATUS_CONFIG[ticket.status];
@@ -762,7 +792,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   const vietQrUrl = getVietQRUrl(settings.bank_name, settings.bank_account_no, settings.bank_account_name, ticket.debt_amount || ticket.final_amount, ticket.ticket_code);
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+    <div className="space-y-6 w-full pb-12">
       {/* Top Header Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -1042,26 +1072,29 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                 <p className="text-slate-800 mt-0.5 font-medium">{ticket.accessories_included || 'Chỉ nhận thân máy'}</p>
               </div>
 
-              {ticket.device_password_hint && (
+              {(ticket.has_device_password || ticket.device_password_hint) && (
                 <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Lock className="w-4 h-4 text-amber-700" />
                     <div>
-                      <span className="font-semibold text-amber-900 block">Mật khẩu màn hình / BIOS (Bảo mật):</span>
-                      <span className="text-[10px] text-amber-700">Chỉ Kỹ thuật viên & Quản lý được phép xem</span>
+                      <span className="font-semibold text-amber-900 block">Mật khẩu màn hình / BIOS (Bảo mật AES-256-GCM):</span>
+                      <span className="text-[10px] text-amber-700">Chỉ Kỹ thuật viên & Quản lý được phép xem (Có lưu nhật ký Audit)</span>
                     </div>
                   </div>
                   {hasRole(['technician', 'manager', 'admin']) ? (
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-bold text-amber-950 px-2.5 py-1 bg-amber-100/80 rounded border border-amber-300">
-                        {showSecretPassword
-                          ? decryptPassword(ticket.device_password_hint)
+                        {isLoadingDevicePass
+                          ? 'Đang giải mã...'
+                          : showSecretPassword
+                          ? decryptedDevicePass
                           : '••••••••'}
                       </span>
                       <button
                         type="button"
-                        onClick={() => setShowSecretPassword(!showSecretPassword)}
-                        className="p-1.5 text-amber-800 hover:bg-amber-200/60 rounded-lg transition-colors cursor-pointer"
+                        onClick={handleToggleDevicePassword}
+                        disabled={isLoadingDevicePass}
+                        className="p-1.5 text-amber-800 hover:bg-amber-200/60 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                         title={showSecretPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                       >
                         {showSecretPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -1295,9 +1328,21 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-sm text-indigo-900">{q.quote_code} (v{q.version})</span>
                   <span className={`px-2 py-0.5 rounded font-bold ${
-                    q.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    q.status === 'Approved'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : q.status === 'Rejected'
+                      ? 'bg-rose-100 text-rose-800'
+                      : q.status === 'Superseded'
+                      ? 'bg-slate-200 text-slate-600'
+                      : 'bg-amber-100 text-amber-800'
                   }`}>
-                    {q.status === 'Approved' ? 'Khách đã duyệt' : 'Chờ khách duyệt'}
+                    {q.status === 'Approved'
+                      ? 'Khách đã duyệt'
+                      : q.status === 'Rejected'
+                      ? 'Khách từ chối'
+                      : q.status === 'Superseded'
+                      ? 'Đã thay thế'
+                      : 'Chờ khách duyệt'}
                   </span>
                 </div>
                 <span className="font-bold text-base text-slate-900">{formatVND(q.total_amount)}</span>
@@ -1364,7 +1409,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                 </div>
               </div>
 
-              {q.status !== 'Approved' && (
+              {q.status === 'Sent' && (
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={() => handleApproveQuote(q.id)}
@@ -1374,10 +1419,16 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                     Khách đồng ý sửa (Duyệt báo giá)
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const reason = window.prompt('Lý do khách từ chối:');
-                      if (reason) StorageService.updateQuoteStatus(q.id, 'Rejected', undefined, reason);
-                      reloadTicket();
+                      if (!reason) return;
+                      try {
+                        await StorageService.updateQuoteStatusAsync(q.id, 'Rejected', undefined, reason);
+                        reloadTicket();
+                        showToast('Đã ghi nhận khách từ chối báo giá', 'success');
+                      } catch (err: any) {
+                        showToast(err.message || 'Lỗi khi từ chối báo giá', 'error');
+                      }
                     }}
                     className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
                   >
@@ -2250,7 +2301,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   if (exportModalQty <= 0 || exportModalQty > exportingPart.stock_quantity) {
                     showToast(`Số lượng không hợp lệ! Tồn kho hiện có: ${exportingPart.stock_quantity}`, 'error');
                     return;
@@ -2260,7 +2311,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                       ? StorageService.getBatches(exportingPart.id).find((b) => b.id === Number(exportModalBatchId))
                       : undefined;
 
-                    StorageService.addPartUsage({
+                    await StorageService.addPartUsageAsync({
                       ticket_id: ticketId,
                       part_id: exportingPart.id,
                       batch_id: chosenBatch?.id,
@@ -2344,9 +2395,9 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   try {
-                    StorageService.returnPartUsage(returningUsage.id, currentUser?.full_name || 'KTV');
+                    await StorageService.returnPartUsageAsync(returningUsage.id, currentUser?.full_name || 'KTV');
                     showToast(`Đã hoàn trả ${returningUsage.quantity}x ${returningUsage.part_name} về kho thành công!`, 'success');
                     setReturningUsage(null);
                     reloadPartUsages();

@@ -338,8 +338,11 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
     setEstimatedDays(null); // Deselect quick button if custom date is modified
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
     if (isCustomCategory && !customCategoryName.trim()) {
       showToast('Vui lòng nhập tên loại thiết bị khác!', 'error');
@@ -361,129 +364,136 @@ export const IntakePage: React.FC<IntakePageProps> = ({ onTicketCreated }) => {
       return;
     }
 
-    // Customer resolution
-    let finalCustomer: Customer;
-    if (isNewCustomer) {
-      if (!custName.trim() || !custPhone.trim()) {
-        showToast('Vui lòng nhập tên và số điện thoại khách hàng!', 'error');
-        return;
+    setIsSubmitting(true);
+    try {
+      // Customer resolution (server-first so customer.id & code match MySQL)
+      let finalCustomer: Customer;
+      if (isNewCustomer) {
+        if (!custName.trim() || !custPhone.trim()) {
+          showToast('Vui lòng nhập tên và số điện thoại khách hàng!', 'error');
+          return;
+        }
+        finalCustomer = await StorageService.addCustomerAsync({
+          name: custName.trim(),
+          phone: custPhone.trim(),
+          email: custEmail.trim() || undefined,
+          address: custAddress.trim() || undefined,
+          customer_type: custType,
+          tax_number: custType === 'company' ? taxNumber.trim() : undefined,
+          current_debt: 0,
+        });
+      } else {
+        const found = customers.find((c) => c.id === Number(selectedCustomerId));
+        if (!found) {
+          showToast('Vui lòng chọn khách hàng!', 'error');
+          return;
+        }
+        finalCustomer = found;
       }
-      finalCustomer = StorageService.addCustomer({
-        name: custName.trim(),
-        phone: custPhone.trim(),
-        email: custEmail.trim() || undefined,
-        address: custAddress.trim() || undefined,
-        customer_type: custType,
-        tax_number: custType === 'company' ? taxNumber.trim() : undefined,
-        current_debt: 0,
+
+      const categoryObj = typeof selectedCategoryId === 'number' ? categories.find((c) => c.id === selectedCategoryId) : null;
+      const brandObj = typeof selectedBrandId === 'number' ? brands.find((b) => b.id === selectedBrandId) : null;
+
+      const finalCategoryName = isCustomCategory
+        ? (customCategoryName.trim() || 'Thiết bị khác')
+        : (categoryObj?.name || 'Thiết bị');
+
+      const finalBrandName = isCustomBrand
+        ? (customBrandName.trim() || 'Hãng khác')
+        : (brandObj?.name || 'Hãng');
+
+      // Create device on server first so device.id belongs to finalCustomer.id in MySQL
+      const device = await StorageService.addDeviceAsync({
+        customer_id: finalCustomer.id,
+        customer_name: finalCustomer.name,
+        customer_phone: finalCustomer.phone,
+        category_id: typeof selectedCategoryId === 'number' ? selectedCategoryId : 7,
+        category_name: finalCategoryName,
+        brand_id: typeof selectedBrandId === 'number' ? selectedBrandId : 999,
+        brand_name: finalBrandName,
+        model_name: modelName.trim(),
+        serial_number: serialNumber.trim() || undefined,
+        color: color.trim() || undefined,
       });
-    } else {
-      const found = customers.find((c) => c.id === Number(selectedCustomerId));
-      if (!found) {
-        showToast('Vui lòng chọn khách hàng!', 'error');
-        return;
+
+      // Combine initial condition (Requirement 9)
+      const combinedInitialCondition = [
+        ...selectedConditions,
+        customConditionNote.trim() ? `Ghi chú: ${customConditionNote.trim()}` : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      // Encrypt password securely (Requirement 8)
+      const encryptedPassword = devicePassword.trim()
+        ? encryptPassword(devicePassword.trim())
+        : undefined;
+
+      // Check technician assignment
+      const assignedTech = technicians.find((t) => t.id === Number(technicianId));
+
+      // Determine initial status: If diagnostic is filled, can move to Diagnosing
+      const hasDiagnosis = Boolean(rootCause.trim() || proposedSolution.trim() || techDefectDescription.trim());
+      const initialStatus = hasDiagnosis && proposedSolution.trim() ? 'Diagnosing' : 'Received';
+
+      // Create ticket on server first so printed receipt has authoritative id & ticket_code (UC-08)
+      const newTicket = await StorageService.createTicketAsync({
+        customer_id: finalCustomer.id,
+        customer_name: finalCustomer.name,
+        customer_phone: finalCustomer.phone,
+        customer_address: finalCustomer.address,
+        device_id: device.id,
+        device_model: device.model_name,
+        device_category: finalCategoryName,
+        device_brand: finalBrandName,
+        device_serial: device.serial_number,
+        device_color: device.color,
+        created_by_id: currentUser?.id || 1,
+        created_by_name: currentUser?.full_name || 'Lễ tân tiếp nhận',
+        primary_technician_id: assignedTech ? assignedTech.id : undefined,
+        primary_technician_name: assignedTech ? assignedTech.full_name : undefined,
+        status: initialStatus,
+        priority,
+        defect_description: defectDesc.trim(),
+        initial_condition: combinedInitialCondition || 'Máy kiểm tra sơ bộ ban đầu',
+        cosmetic_condition: cosmeticCond.trim(),
+        accessories_included: accessories.trim(),
+        device_password_hint: encryptedPassword,
+        estimated_completion: estimatedDateTime ? new Date(estimatedDateTime).toISOString() : undefined,
+        subtotal_amount: estimatedCost ? Number(estimatedCost) : 0,
+        discount_amount: 0,
+        final_amount: estimatedCost ? Number(estimatedCost) : 0,
+        paid_amount: 0,
+        debt_amount: estimatedCost ? Number(estimatedCost) : 0,
+        is_warranty_claim: false,
+      });
+
+      // Save technical diagnosis if entered (Requirement 5)
+      if (hasDiagnosis && assignedTech) {
+        await StorageService.addDiagnosticAsync({
+          ticket_id: newTicket.id,
+          technician_id: assignedTech.id,
+          technician_name: assignedTech.full_name,
+          root_cause: rootCause.trim() || 'Kỹ thuật tiếp nhận chẩn đoán sơ bộ',
+          proposed_solution: proposedSolution.trim() || 'Kiểm tra chi tiết linh kiện',
+          estimated_cost: estimatedCost ? Number(estimatedCost) : 0,
+          estimated_hours: 1,
+          notes: techDefectDescription.trim() || undefined,
+        });
       }
-      finalCustomer = found;
+
+      showToast(`Đã tạo phiếu tiếp nhận thành công: ${newTicket.ticket_code}!`, 'success');
+      setCreatedTicket(newTicket);
+      setShowPrintModal(true);
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể tạo phiếu tiếp nhận. Vui lòng thử lại!', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const categoryObj = typeof selectedCategoryId === 'number' ? categories.find((c) => c.id === selectedCategoryId) : null;
-    const brandObj = typeof selectedBrandId === 'number' ? brands.find((b) => b.id === selectedBrandId) : null;
-
-    const finalCategoryName = isCustomCategory
-      ? (customCategoryName.trim() || 'Thiết bị khác')
-      : (categoryObj?.name || 'Thiết bị');
-
-    const finalBrandName = isCustomBrand
-      ? (customBrandName.trim() || 'Hãng khác')
-      : (brandObj?.name || 'Hãng');
-
-    // Create device
-    const device = StorageService.addDevice({
-      customer_id: finalCustomer.id,
-      customer_name: finalCustomer.name,
-      customer_phone: finalCustomer.phone,
-      category_id: typeof selectedCategoryId === 'number' ? selectedCategoryId : 7,
-      category_name: finalCategoryName,
-      brand_id: typeof selectedBrandId === 'number' ? selectedBrandId : 999,
-      brand_name: finalBrandName,
-      model_name: modelName.trim(),
-      serial_number: serialNumber.trim() || undefined,
-      color: color.trim() || undefined,
-    });
-
-    // Combine initial condition (Requirement 9)
-    const combinedInitialCondition = [
-      ...selectedConditions,
-      customConditionNote.trim() ? `Ghi chú: ${customConditionNote.trim()}` : '',
-    ]
-      .filter(Boolean)
-      .join(', ');
-
-    // Encrypt password securely (Requirement 8)
-    const encryptedPassword = devicePassword.trim()
-      ? encryptPassword(devicePassword.trim())
-      : undefined;
-
-    // Check technician assignment
-    const assignedTech = technicians.find((t) => t.id === Number(technicianId));
-
-    // Determine initial status: If diagnostic is filled, can move to Diagnosing or Waiting_Approval
-    const hasDiagnosis = Boolean(rootCause.trim() || proposedSolution.trim() || techDefectDescription.trim());
-    const initialStatus = hasDiagnosis && proposedSolution.trim() ? 'Diagnosing' : 'Received';
-
-    // Create ticket (UC-08)
-    const newTicket = StorageService.createTicket({
-      customer_id: finalCustomer.id,
-      customer_name: finalCustomer.name,
-      customer_phone: finalCustomer.phone,
-      customer_address: finalCustomer.address,
-      device_id: device.id,
-      device_model: device.model_name,
-      device_category: finalCategoryName,
-      device_brand: finalBrandName,
-      device_serial: device.serial_number,
-      device_color: device.color,
-      created_by_id: currentUser?.id || 1,
-      created_by_name: currentUser?.full_name || 'Lễ tân tiếp nhận',
-      primary_technician_id: assignedTech ? assignedTech.id : undefined,
-      primary_technician_name: assignedTech ? assignedTech.full_name : undefined,
-      status: initialStatus,
-      priority,
-      defect_description: defectDesc.trim(), // Requirement 4: Kept separate
-      initial_condition: combinedInitialCondition || 'Máy kiểm tra sơ bộ ban đầu',
-      cosmetic_condition: cosmeticCond.trim(),
-      accessories_included: accessories.trim(),
-      device_password_hint: encryptedPassword, // Requirement 8: Encrypted
-      estimated_completion: estimatedDateTime ? new Date(estimatedDateTime).toISOString() : undefined,
-      subtotal_amount: estimatedCost ? Number(estimatedCost) : 0,
-      discount_amount: 0,
-      final_amount: estimatedCost ? Number(estimatedCost) : 0,
-      paid_amount: 0,
-      debt_amount: estimatedCost ? Number(estimatedCost) : 0,
-      is_warranty_claim: false,
-    });
-
-    // Save technical diagnosis if entered (Requirement 5)
-    if (hasDiagnosis && assignedTech) {
-      StorageService.addDiagnostic({
-        ticket_id: newTicket.id,
-        technician_id: assignedTech.id,
-        technician_name: assignedTech.full_name,
-        root_cause: rootCause.trim() || 'Kỹ thuật tiếp nhận chẩn đoán sơ bộ',
-        proposed_solution: proposedSolution.trim() || 'Kiểm tra chi tiết linh kiện',
-        estimated_cost: estimatedCost ? Number(estimatedCost) : 0,
-        estimated_hours: 1,
-        notes: techDefectDescription.trim() || undefined,
-      });
-    }
-
-    showToast(`Đã tạo phiếu tiếp nhận thành công: ${newTicket.ticket_code}!`, 'success');
-    setCreatedTicket(newTicket);
-    setShowPrintModal(true);
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12 font-sans">
+    <div className="w-full space-y-6 pb-12 font-sans">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types';
 import {
@@ -11,8 +11,10 @@ import {
   User,
   Key,
   LogOut,
+  Database,
 } from 'lucide-react';
 import { StorageService } from '../../services/mockStorage';
+import { ApiClient, SqlBackendStatus } from '../../services/apiClient';
 import { useToast } from '../../contexts/ToastContext';
 import { LogoutConfirmModal } from '../common/LogoutConfirmModal';
 
@@ -31,6 +33,29 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [dbStatus, setDbStatus] = useState<SqlBackendStatus>(() => ApiClient.getStatus());
+
+  useEffect(() => {
+    const onStatusChange = (e: Event) => {
+      const custom = e as CustomEvent<SqlBackendStatus>;
+      if (custom.detail) setDbStatus(custom.detail);
+    };
+    window.addEventListener('repairflow_db_status', onStatusChange);
+    return () => window.removeEventListener('repairflow_db_status', onStatusChange);
+  }, []);
+
+  const handleReconnectMySQL = async () => {
+    const status = await ApiClient.reconnectMySQL();
+    await StorageService.syncFromBackend();
+    if (status.connected) {
+      showToast(`Đã kết nối trực tiếp tới MySQL (${status.host}:${status.port}/${status.database}) qua Drizzle ORM!`, 'success');
+    } else {
+      showToast(
+        `Không thể kết nối tới MySQL (${status.host || '127.0.0.1'}:${status.port || 3306}). Vui lòng kiểm tra dịch vụ MySQL.`,
+        'error'
+      );
+    }
+  };
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const q = e.target.value;
@@ -134,6 +159,26 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
 
       {/* Right Controls: Role Switcher & Action Tools */}
       <div className="flex items-center gap-2">
+        {/* MySQL + Drizzle ORM Status Badge */}
+        <button
+          onClick={handleReconnectMySQL}
+          title={
+            dbStatus.connected
+              ? `Đang kết nối MySQL (${dbStatus.host}:${dbStatus.port}/${dbStatus.database}) qua Drizzle ORM - Nhấn để đồng bộ`
+              : `Chưa kết nối MySQL (${dbStatus.host || '127.0.0.1'}:${dbStatus.port || 3306}) - Nhấn để kết nối lại`
+          }
+          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+            dbStatus.connected
+              ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+              : 'bg-slate-100 text-slate-600 border-slate-200'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5" />
+          <span className="hidden xl:inline">
+            {dbStatus.connected ? 'MySQL (Drizzle): Connected' : 'MySQL: Connecting...'}
+          </span>
+        </button>
+
         {/* Reset to sample data button */}
         <button
           onClick={() => setShowResetConfirm(true)}

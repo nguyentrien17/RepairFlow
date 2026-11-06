@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Crisp card contrast & elevation on cool-slate canvas */
+main .bg-white.rounded-2xl,
+main .bg-white.rounded-3xl {
+  border-color: #cbd5e1;
+  box-shadow:
+    0 4px 14px -3px rgba(15, 23, 42, 0.06),
+    0 2px 6px -1px rgba(15, 23, 42, 0.04);
+}
+
 /* Modern sleek custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

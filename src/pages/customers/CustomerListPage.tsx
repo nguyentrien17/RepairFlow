@@ -28,28 +28,37 @@ export const CustomerListPage: React.FC = () => {
       c.code.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleCreateCustomer = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim()) {
       showToast('Vui lòng điền họ tên và số điện thoại!', 'error');
       return;
     }
-    const newCust = StorageService.addCustomer({
-      name: name.trim(),
-      phone: phone.trim(),
-      email: email.trim() || undefined,
-      address: address.trim() || undefined,
-      customer_type: type,
-      tax_number: type === 'company' ? tax.trim() : undefined,
-      current_debt: 0,
-    });
-    showToast(`Đã thêm khách hàng ${newCust.name} (${newCust.code})!`, 'success');
-    setShowAddModal(false);
-    setName('');
-    setPhone('');
-    setEmail('');
-    setAddress('');
-    reload();
+    setIsSubmitting(true);
+    try {
+      const newCust = await StorageService.addCustomerAsync({
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+        address: address.trim() || undefined,
+        customer_type: type,
+        tax_number: type === 'company' ? tax.trim() : undefined,
+        current_debt: 0,
+      });
+      showToast(`Đã thêm khách hàng ${newCust.name} (${newCust.code})!`, 'success');
+      setShowAddModal(false);
+      setName('');
+      setPhone('');
+      setEmail('');
+      setAddress('');
+      reload();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể lưu khách hàng mới!', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -201,9 +210,10 @@ export const CustomerListPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-md shadow-indigo-600/30"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-md shadow-indigo-600/30 disabled:opacity-50"
                 >
-                  Lưu khách hàng
+                  {isSubmitting ? 'Đang lưu...' : 'Lưu khách hàng'}
                 </button>
               </div>
             </form>
