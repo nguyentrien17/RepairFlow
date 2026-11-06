@@ -20,7 +20,7 @@ import { db, initDatabase, closeDatabase, withTransaction } from '../db/pool.ts'
 import { seedDevelopmentData } from '../db/seeds/dev.seed.ts';
 import { nextSequenceCode } from '../utils/codeGenerator.ts';
 import app from '../app.ts';
-import { env } from '../config/env.ts';
+import { env, parseTrustProxy } from '../config/env.ts';
 
 function runMiddleware(
   mw: any,
@@ -113,6 +113,18 @@ test('scrypt password hashing, AES-256-GCM device password encryption, and raw-b
   const validHmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
   assert.equal(verifyWebhookSignature(rawBody, `sha256=${validHmac}`, secret), true);
   assert.equal(verifyWebhookSignature(JSON.stringify(JSON.parse(rawBody)), `sha256=${validHmac}`, secret), false);
+});
+
+test('parseTrustProxy defaults to false, accepts hop counts / addresses, and rejects "true"', () => {
+  assert.equal(parseTrustProxy(undefined), false);
+  assert.equal(parseTrustProxy(''), false);
+  assert.equal(parseTrustProxy('false'), false);
+  assert.equal(parseTrustProxy('0'), false);
+  assert.equal(parseTrustProxy('1'), 1);
+  assert.equal(parseTrustProxy('loopback'), 'loopback');
+  assert.equal(parseTrustProxy('10.0.0.0/8, 172.16.0.5'), '10.0.0.0/8, 172.16.0.5');
+  assert.throws(() => parseTrustProxy('true'));
+  assert.throws(() => parseTrustProxy('1; rm -rf'));
 });
 
 test('createRateLimiter blocks requests exceeding max within window', async () => {
@@ -230,6 +242,9 @@ test('End-to-end MySQL & Express API Integration Suite (Items B, C, D, E, G, H, 
     return;
   }
 
+  // The test client connects over loopback and simulates distinct client IPs via X-Forwarded-For,
+  // exactly like an Nginx running on the same host (TRUST_PROXY=loopback).
+  app.set('trust proxy', 'loopback');
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const addr = server.address() as { port: number };

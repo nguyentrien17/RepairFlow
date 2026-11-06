@@ -33,8 +33,9 @@ import { bootstrapRouter } from './modules/bootstrap/bootstrap.routes';
 
 const app = express();
 
-// Trust first reverse proxy (Nginx / Cloudflare) so req.ip reflects real client IP for rate limiting & audit logs
-app.set('trust proxy', 1);
+// Only trust X-Forwarded-For when a reverse proxy is actually configured (TRUST_PROXY in .env).
+// Default false: req.ip is the socket address, so clients cannot spoof their IP to bypass rate limits.
+app.set('trust proxy', env.TRUST_PROXY);
 
 // P0-1 & P2-8: CORS configured with explicit origin & credentials
 const allowedOrigins = new Set([

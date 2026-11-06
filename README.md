@@ -10,6 +10,7 @@ Sao chép `.env.example` thành `.env` và cập nhật thông tin kết nối M
 - `NODE_ENV=production` (mặc định).
 - `ENABLE_DEV_TOOLS=false` (chỉ bật `true` ở môi trường phát triển nội bộ khi cần seed mẫu hoặc chuyển nhanh role).
 - `JWT_SECRET` & `DEVICE_SECRET_KEY`: bắt buộc thay bằng chuỗi ngẫu nhiên bảo mật trước khi chạy production (tối thiểu 32 ký tự).
+- `TRUST_PROXY`: mặc định `false` (client kết nối thẳng vào app). Chỉ đặt `1` khi có đúng 1 reverse proxy (Nginx / Cloudflare Tunnel) đứng trước app, hoặc `loopback` khi Nginx chạy cùng máy. Đặt sai (tin proxy khi không có proxy) sẽ cho phép client giả mạo IP để né rate limit tra cứu công khai.
 
 ## 3. Quy trình Quản lý Schema & Migration (Drizzle ORM)
 1. **Nguồn schema duy nhất:** Toàn bộ bảng và ràng buộc được khai báo tại [`server/db/schema.ts`](server/db/schema.ts).

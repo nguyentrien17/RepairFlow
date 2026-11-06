@@ -15,6 +15,31 @@ export interface EnvConfig {
   DB_NAME: string;
   JWT_SECRET: string;
   DEVICE_SECRET_KEY: string;
+  /** Value passed to Express `trust proxy`: false (direct), hop count, or 'loopback' / IP / CIDR list */
+  TRUST_PROXY: false | number | string;
+}
+
+/**
+ * Parses TRUST_PROXY. Default is `false` (app is reached directly) so clients cannot spoof
+ * X-Forwarded-For to bypass IP rate limits or forge audit-log IPs.
+ * - "false" / "0" / empty   -> false
+ * - "1", "2", ...           -> number of trusted reverse-proxy hops (e.g. 1 = Nginx in front)
+ * - "loopback", "10.0.0.0/8, 172.16.0.5", "uniquelocal" -> trusted proxy addresses
+ * - "true" is rejected: it trusts every hop, letting any client choose its own IP.
+ */
+export function parseTrustProxy(raw: string | undefined): false | number | string {
+  const value = (raw ?? '').trim();
+  if (!value || /^(false|0|no|off)$/i.test(value)) return false;
+  if (/^true$/i.test(value)) {
+    throw new Error(
+      '[Config Error] TRUST_PROXY="true" tin mọi proxy và cho phép client giả mạo IP. Hãy dùng số hop (vd: "1") hoặc địa chỉ proxy (vd: "loopback", "10.0.0.0/8").'
+    );
+  }
+  if (/^\d+$/.test(value)) return Number(value);
+  if (!/^[\w.:/,\s-]+$/.test(value)) {
+    throw new Error(`[Config Error] TRUST_PROXY không hợp lệ: "${value}"`);
+  }
+  return value;
 }
 
 const EXAMPLE_PLACEHOLDER_SECRETS = new Set([
@@ -76,6 +101,7 @@ export function parseEnvConfig(rawEnv: NodeJS.ProcessEnv = process.env): EnvConf
     DB_NAME: dbName,
     JWT_SECRET: jwtSecret,
     DEVICE_SECRET_KEY: deviceSecretKey,
+    TRUST_PROXY: parseTrustProxy(rawEnv.TRUST_PROXY),
   };
 }
 
