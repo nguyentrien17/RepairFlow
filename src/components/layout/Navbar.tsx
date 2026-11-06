@@ -95,33 +95,35 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-4 lg:px-6 flex items-center justify-between shrink-0 z-30 no-print select-none">
+    <header className="h-16 bg-white/95 backdrop-blur-md border-t-2 border-t-indigo-600 border-b border-slate-300/80 shadow-xs px-4 lg:px-6 flex items-center justify-between shrink-0 z-30 no-print select-none">
       {/* Brand & Title */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30 ring-1 ring-indigo-400/30">
           <Wrench className="w-5 h-5" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-bold text-slate-900 tracking-tight text-lg">RepairFlow</h1>
-            <span className="text-[11px] font-semibold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+            <h1 className="font-extrabold bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-700 bg-clip-text text-transparent tracking-tight text-lg">
+              RepairFlow
+            </h1>
+            <span className="text-[11px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-2xs">
               v2.5
             </span>
           </div>
-          <p className="text-xs text-slate-500 hidden sm:block">Quản lý tiếp nhận & sửa chữa thiết bị điện tử</p>
+          <p className="text-xs text-slate-500 font-medium hidden sm:block">Quản lý tiếp nhận & sửa chữa thiết bị điện tử</p>
         </div>
       </div>
 
       {/* Global Search Bar (UC-30) */}
       <div className="relative max-w-md w-full mx-4 hidden md:block">
         <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-indigo-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={handleSearch}
             placeholder="Tìm theo mã SC-..., Tên khách, SĐT, Serial thiết bị..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-100 hover:bg-slate-50 focus:bg-white text-sm rounded-xl border border-transparent focus:border-indigo-400 focus:outline-hidden transition-all text-slate-800 placeholder-slate-400"
+            className="w-full pl-10 pr-4 py-2 bg-slate-100/90 hover:bg-slate-100 focus:bg-white text-sm rounded-xl border border-slate-300/80 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 focus:outline-hidden transition-all text-slate-800 placeholder-slate-400"
           />
         </div>
 

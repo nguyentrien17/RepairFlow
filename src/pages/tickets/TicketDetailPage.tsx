@@ -792,51 +792,53 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
   const vietQrUrl = getVietQRUrl(settings.bank_name, settings.bank_account_no, settings.bank_account_name, ticket.debt_amount || ticket.final_amount, ticket.ticket_code);
 
   return (
-    <div className="space-y-6 w-full pb-12">
-      {/* Top Header Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+    <div className="space-y-5 w-full pb-12">
+      {/* Top Header Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-900 text-white p-5 rounded-2xl border border-indigo-800/70 shadow-lg shadow-indigo-950/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
           <button
             onClick={onBack}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
+            className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white border border-white/15 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="font-mono font-bold text-lg text-indigo-700">{ticket.ticket_code}</span>
-              <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold border ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="font-mono font-extrabold text-lg text-white bg-indigo-500/30 border border-indigo-400/40 px-3 py-0.5 rounded-xl tracking-wide shadow-2xs">
+                {ticket.ticket_code}
+              </span>
+              <span className={`text-xs px-2.5 py-1 rounded-lg font-bold border shadow-2xs ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}>
                 {statusConf.label}
               </span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${priorityConf.badgeClass}`}>
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border shadow-2xs ${priorityConf.badgeClass}`}>
                 {priorityConf.label}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Khách hàng: <strong className="text-slate-800">{ticket.customer_name}</strong> ({ticket.customer_phone}) — Nhận ngày: {formatDateTime(ticket.created_at)}
+            <p className="text-xs text-indigo-200/90 mt-1.5">
+              Khách hàng: <strong className="text-white font-bold">{ticket.customer_name}</strong> ({ticket.customer_phone}) — Nhận ngày: <span className="text-indigo-100">{formatDateTime(ticket.created_at)}</span>
             </p>
           </div>
         </div>
 
         {/* Print Buttons Quick Action */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setPrintType('intake')}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 border border-white/20 transition-colors cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5" />
+            <Printer className="w-3.5 h-3.5 text-indigo-300" />
             Phiếu tiếp nhận
           </button>
           <button
             onClick={() => setPrintType('invoice')}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm shadow-emerald-950/30 transition-colors cursor-pointer"
           >
             <DollarSign className="w-3.5 h-3.5" />
             Hóa đơn thu tiền
           </button>
           <button
             onClick={() => setPrintType('handover')}
-            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs flex items-center gap-1.5 border border-indigo-200 transition-colors"
+            className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm shadow-amber-950/30 transition-colors cursor-pointer"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             Biên bản bàn giao
@@ -845,11 +847,11 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       </div>
 
       {/* Role-Based Status Transition & Workflow Action Panel */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-300/90 shadow-sm overflow-hidden">
         {/* Top Header: Current Stage & User Authority Context */}
-        <div className="p-3.5 sm:px-4 bg-slate-50/80 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="p-3.5 sm:px-5 bg-gradient-to-r from-indigo-50/90 via-slate-50 to-violet-50/80 border-b border-indigo-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+            <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4 text-indigo-600 shrink-0" />
               Giai đoạn hiện tại:
             </span>
@@ -858,12 +860,12 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </span>
 
             {/* Account / Role Badge */}
-            <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
+            <div className="h-4 w-px bg-indigo-200/70 mx-1 hidden sm:block" />
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-xl border border-indigo-200/80 shadow-2xs text-xs">
               <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
               <span className="text-slate-500">Tài khoản:</span>
-              <strong className="text-slate-800">{currentUser?.full_name || 'Nhân viên'}</strong>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <strong className="text-slate-900">{currentUser?.full_name || 'Nhân viên'}</strong>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-600 text-white">
                 {ROLE_DISPLAY_NAMES[userRole] || userRole}
               </span>
             </div>
@@ -875,14 +877,14 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
               <button
                 type="button"
                 onClick={() => setIsAdminOverride(!isAdminOverride)}
-                className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                   isAdminOverride
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs font-bold'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    ? 'bg-amber-500 text-white border border-amber-600 shadow-sm font-bold'
+                    : 'bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-50 shadow-2xs'
                 }`}
                 title="Bật/tắt chế độ quản trị để can thiệp chuyển đến bất kỳ trạng thái nào"
               >
-                <Zap className={`w-3.5 h-3.5 ${isAdminOverride ? 'text-amber-600 fill-amber-500' : 'text-slate-400'}`} />
+                <Zap className={`w-3.5 h-3.5 ${isAdminOverride ? 'text-white fill-white' : 'text-amber-500'}`} />
                 <span>Chế độ Quản trị {isAdminOverride ? '(Đang bật toàn quyền)' : '(Toàn quyền chuyển)'}</span>
               </button>
             </div>
@@ -976,15 +978,15 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       </div>
 
       {/* Tab Filter & Permission Control Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 bg-slate-100/90 rounded-xl text-xs border border-slate-200/80">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 bg-indigo-50/90 rounded-xl text-xs border border-indigo-200/80 shadow-2xs">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-bold text-slate-700 flex items-center gap-1.5">
+          <span className="font-bold text-indigo-950 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-indigo-600" />
             Đang truy cập với vai trò: <span className="text-indigo-700 underline font-extrabold">{ROLE_DISPLAY_NAMES[userRole] || userRole}</span>
           </span>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-600 text-[11px]">
-            Đang hiển thị <strong className="text-slate-900 font-bold">{visibleTabs.length}/7 tab</strong> {showAllTabs ? '(Đã mở tất cả tab quy trình)' : `(Lọc theo nhiệm vụ ${ROLE_DISPLAY_NAMES[userRole]})`}
+          <span className="text-indigo-300">|</span>
+          <span className="text-indigo-900/80 text-[11px] font-medium">
+            Đang hiển thị <strong className="text-indigo-950 font-extrabold">{visibleTabs.length}/7 tab</strong> {showAllTabs ? '(Đã mở tất cả tab quy trình)' : `(Lọc theo nhiệm vụ ${ROLE_DISPLAY_NAMES[userRole]})`}
           </span>
         </div>
 
@@ -992,7 +994,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
           <button
             type="button"
             onClick={() => setShowAllTabs(!showAllTabs)}
-            className="px-3 py-1 bg-white hover:bg-slate-200 text-slate-800 font-bold rounded-lg border border-slate-300 text-[11px] shadow-2xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            className="px-3 py-1 bg-white hover:bg-indigo-100 text-indigo-900 font-bold rounded-lg border border-indigo-300 text-[11px] shadow-2xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
           >
             {showAllTabs ? '🔒 Chỉ xem tab thuộc vai trò tôi' : '🔓 Hiển thị tất cả 7 tab quy trình'}
           </button>
@@ -1000,7 +1002,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
       </div>
 
       {/* Navigation Tabs Bar */}
-      <div className="flex border-b border-slate-200 space-x-1 overflow-x-auto text-xs font-bold pt-1">
+      <div className="bg-white p-1.5 rounded-2xl border border-slate-300/90 shadow-sm flex gap-1.5 overflow-x-auto text-xs font-bold">
         {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -1008,15 +1010,19 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-1.5 py-3 px-3.5 rounded-t-xl transition-all whitespace-nowrap border-b-2 ${
+              className={`flex items-center gap-2 py-2.5 px-4 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
                 isActive
-                  ? 'border-indigo-600 text-indigo-700 bg-white shadow-xs'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'text-slate-600 hover:text-indigo-700 hover:bg-indigo-50/70'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-indigo-500'}`} />
               <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${tab.badgeColor}`}>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold border ${
+                  isActive ? 'bg-white/20 text-white border-white/30' : tab.badgeColor
+                }`}
+              >
                 {tab.badge}
               </span>
             </button>
@@ -1029,47 +1035,52 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* Device & Symptoms Card */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-100">Chi tiết thiết bị & Lỗi ban đầu</h3>
+            <div className="bg-white p-6 rounded-2xl border border-slate-300/90 shadow-sm space-y-4 border-t-4 border-t-indigo-600">
+              <div className="flex items-center gap-2.5 pb-3 border-b border-slate-200">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Chi tiết thiết bị & Lỗi ban đầu</h3>
+              </div>
               
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <p className="text-slate-500">Thiết bị:</p>
-                  <p className="font-bold text-slate-800 text-sm mt-0.5">{ticket.device_brand} {ticket.device_model}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
+                  <p className="text-indigo-600/80 font-semibold text-[11px] uppercase tracking-wider">Thiết bị</p>
+                  <p className="font-extrabold text-slate-900 text-sm mt-1">{ticket.device_brand} {ticket.device_model}</p>
                 </div>
-                <div>
-                  <p className="text-slate-500">Loại máy:</p>
-                  <p className="font-semibold text-slate-800 mt-0.5">{ticket.device_category}</p>
+                <div className="p-3 rounded-xl bg-violet-50/60 border border-violet-100">
+                  <p className="text-violet-600/80 font-semibold text-[11px] uppercase tracking-wider">Loại máy</p>
+                  <p className="font-bold text-slate-900 text-sm mt-1">{ticket.device_category}</p>
                 </div>
-                <div>
-                  <p className="text-slate-500">Serial / IMEI:</p>
-                  <p className="font-mono font-semibold text-slate-800 mt-0.5">{ticket.device_serial || 'Không có'}</p>
+                <div className="p-3 rounded-xl bg-sky-50/60 border border-sky-100">
+                  <p className="text-sky-700/80 font-semibold text-[11px] uppercase tracking-wider">Serial / IMEI</p>
+                  <p className="font-mono font-bold text-slate-900 text-xs mt-1">{ticket.device_serial || 'Không có'}</p>
                 </div>
-                <div>
-                  <p className="text-slate-500">Màu sắc:</p>
-                  <p className="font-semibold text-slate-800 mt-0.5">{ticket.device_color || '---'}</p>
-                </div>
-              </div>
-
-              <div className="p-3 bg-red-50/60 border border-red-200 rounded-xl text-xs space-y-1">
-                <p className="font-bold text-red-900">Lỗi khách hàng mô tả:</p>
-                <p className="text-red-800 italic">{ticket.defect_description}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <p className="font-semibold text-slate-600">Tình trạng lúc nhận:</p>
-                  <p className="text-slate-800 mt-0.5">{ticket.initial_condition || 'Bình thường'}</p>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <p className="font-semibold text-slate-600">Ngoại quan:</p>
-                  <p className="text-slate-800 mt-0.5">{ticket.cosmetic_condition || 'Không trầy xước'}</p>
+                <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                  <p className="text-emerald-700/80 font-semibold text-[11px] uppercase tracking-wider">Màu sắc</p>
+                  <p className="font-bold text-slate-900 text-sm mt-1">{ticket.device_color || '---'}</p>
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                <p className="font-semibold text-slate-600">Phụ kiện đi kèm:</p>
-                <p className="text-slate-800 mt-0.5 font-medium">{ticket.accessories_included || 'Chỉ nhận thân máy'}</p>
+              <div className="p-3.5 bg-rose-50/90 border border-rose-200 border-l-4 border-l-rose-500 rounded-xl text-xs space-y-1">
+                <p className="font-bold text-rose-900">Lỗi khách hàng mô tả:</p>
+                <p className="text-rose-800 italic font-medium">{ticket.defect_description}</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 bg-slate-50/90 rounded-xl border border-slate-200 border-l-4 border-l-indigo-500">
+                  <p className="font-bold text-indigo-950">Tình trạng lúc nhận:</p>
+                  <p className="text-slate-700 mt-1 font-medium">{ticket.initial_condition || 'Bình thường'}</p>
+                </div>
+                <div className="p-3.5 bg-slate-50/90 rounded-xl border border-slate-200 border-l-4 border-l-violet-500">
+                  <p className="font-bold text-violet-950">Ngoại quan:</p>
+                  <p className="text-slate-700 mt-1 font-medium">{ticket.cosmetic_condition || 'Không trầy xước'}</p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-sky-50/50 rounded-xl border border-sky-200/80 border-l-4 border-l-sky-500 text-xs">
+                <p className="font-bold text-sky-950">Phụ kiện đi kèm:</p>
+                <p className="text-slate-800 mt-1 font-semibold">{ticket.accessories_included || 'Chỉ nhận thân máy'}</p>
               </div>
 
               {(ticket.has_device_password || ticket.device_password_hint) && (
@@ -1110,14 +1121,14 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
 
             {/* Status Timeline History */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-100">Lịch sử tiến độ xử lý</h3>
+            <div className="bg-white p-6 rounded-2xl border border-slate-300/90 shadow-sm space-y-4 border-t-4 border-t-violet-600">
+              <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-200">Lịch sử tiến độ xử lý</h3>
               <div className="space-y-3">
                 {StorageService.getStatusHistories(ticket.id).map((h) => {
                   const toCfg = STATUS_CONFIG[h.to_status];
                   const fromCfg = h.from_status ? STATUS_CONFIG[h.from_status] : null;
                   return (
-                    <div key={h.id} className="flex gap-3 text-xs">
+                    <div key={h.id} className="flex gap-3 text-xs p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/70">
                       <div className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${toCfg ? 'bg-indigo-600' : 'bg-slate-400'}`} />
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1137,7 +1148,7 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
                         <p className="text-slate-700 leading-relaxed font-medium">
                           {localizeText(h.notes) || 'Cập nhật tiến trình'}
                         </p>
-                        <span className="text-[10px] text-slate-400 block">Thực hiện bởi: {h.changed_by_name}</span>
+                        <span className="text-[10px] text-slate-500 block">Thực hiện bởi: <strong className="text-slate-700">{h.changed_by_name}</strong></span>
                       </div>
                     </div>
                   );
@@ -1149,12 +1160,14 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
           {/* Right Column: Assignment & Quick Summary */}
           <div className="space-y-6">
             {/* Technician Assignment (UC-10) */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                <UserCheck className="w-4 h-4 text-indigo-600" />
+            <div className="bg-white p-5 rounded-2xl border border-slate-300/90 shadow-sm space-y-3 border-t-4 border-t-indigo-500">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <UserCheck className="w-4 h-4" />
+                </div>
                 <h3 className="font-bold text-slate-900 text-sm">Phân công kỹ thuật</h3>
               </div>
-              <p className="text-xs text-slate-500">Kỹ thuật viên phụ trách chính thiết bị này:</p>
+              <p className="text-xs text-slate-600 font-medium">Kỹ thuật viên phụ trách chính thiết bị này:</p>
               <SearchableSelect
                 options={techOptions}
                 value={ticket.primary_technician_id || ''}
@@ -1165,29 +1178,34 @@ export const TicketDetailPage: React.FC<TicketDetailPageProps> = ({ ticketId, on
             </div>
 
             {/* Financial Summary */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-              <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-100">Tổng quan tài chính</h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Tổng tiền dịch vụ:</span>
-                  <span className="font-bold text-slate-800">{formatVND(ticket.final_amount)}</span>
+            <div className="bg-white p-5 rounded-2xl border border-slate-300/90 shadow-sm space-y-3 border-t-4 border-t-emerald-500">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <DollarSign className="w-4 h-4" />
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Đã thanh toán:</span>
-                  <span className="font-bold text-emerald-600">{formatVND(ticket.paid_amount)}</span>
+                <h3 className="font-bold text-slate-900 text-sm">Tổng quan tài chính</h3>
+              </div>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between items-center p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100">
+                  <span className="text-indigo-900 font-semibold">Tổng tiền dịch vụ:</span>
+                  <span className="font-extrabold text-indigo-950 text-sm">{formatVND(ticket.final_amount)}</span>
                 </div>
-                <div className="flex justify-between pt-2 border-t border-slate-100 font-bold text-sm">
-                  <span className="text-rose-600">Còn lại (Công nợ):</span>
-                  <span className="text-rose-600">{formatVND(ticket.debt_amount)}</span>
+                <div className="flex justify-between items-center p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/70">
+                  <span className="text-emerald-900 font-semibold">Đã thanh toán:</span>
+                  <span className="font-extrabold text-emerald-700 text-sm">{formatVND(ticket.paid_amount)}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-rose-50 border border-rose-200 font-bold text-sm">
+                  <span className="text-rose-700">Còn lại (Công nợ):</span>
+                  <span className="text-rose-700 font-extrabold text-base">{formatVND(ticket.debt_amount)}</span>
                 </div>
               </div>
             </div>
 
             {/* Public Lookup QR Card */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs text-center space-y-2">
-              <p className="text-xs font-bold text-slate-800">QR Tra cứu khách hàng</p>
-              <img src={getTicketQrUrl(ticket.ticket_code)} alt="QR Tra cứu" className="w-28 h-28 mx-auto border border-slate-200 p-1.5 rounded-xl shadow-xs" />
-              <p className="text-[11px] text-slate-400">Khách có thể quét để xem trạng thái trên điện thoại</p>
+            <div className="bg-gradient-to-b from-white to-indigo-50/60 p-5 rounded-2xl border border-indigo-200/80 shadow-sm text-center space-y-2.5">
+              <p className="text-xs font-extrabold text-indigo-950 uppercase tracking-wide">QR Tra cứu khách hàng</p>
+              <img src={getTicketQrUrl(ticket.ticket_code)} alt="QR Tra cứu" className="w-28 h-28 mx-auto bg-white border-2 border-indigo-200 p-1.5 rounded-xl shadow-sm" />
+              <p className="text-[11px] text-indigo-700/80 font-medium">Khách có thể quét để xem trạng thái trên điện thoại</p>
             </div>
           </div>
         </div>

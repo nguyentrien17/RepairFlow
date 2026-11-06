@@ -159,9 +159,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 no-print select-none border-r border-slate-800 h-full overflow-hidden">
-      <div className="p-4 border-b border-slate-800 shrink-0">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Điều hướng hệ thống</p>
+    <aside className="w-64 bg-gradient-to-b from-[#0b1120] via-[#111a33] to-[#0b1120] text-slate-300 flex flex-col shrink-0 no-print select-none border-r border-indigo-950/80 shadow-xl h-full overflow-hidden">
+      <div className="p-4 border-b border-indigo-950/80 shrink-0 bg-white/[0.02]">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300/80">Điều hướng hệ thống</p>
       </div>
 
       <nav className="p-3 space-y-1 overflow-y-auto min-h-0 flex-1 text-sm font-medium custom-dark-scrollbar">
@@ -176,20 +176,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, openC
             <button
               key={item.id}
               onClick={() => onTabChange(item.id as TabType)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-pointer ${
                 item.highlight
-                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-900/40 hover:from-indigo-500 hover:to-indigo-600 font-semibold mb-2'
+                  ? 'bg-gradient-to-r from-indigo-500 via-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/35 hover:from-indigo-400 hover:to-violet-500 font-bold mb-2.5 ring-1 ring-white/20'
                   : isActive
-                  ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold'
-                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+                  ? 'bg-gradient-to-r from-indigo-600/35 to-violet-600/15 text-white border border-indigo-400/40 font-bold shadow-sm'
+                  : 'text-slate-300/85 hover:text-white hover:bg-white/[0.07]'
               }`}
             >
               <div className="flex items-center gap-3">
-                <Icon className={`w-4 h-4 ${item.highlight ? 'text-white' : isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 ${item.highlight ? 'text-white' : isActive ? 'text-indigo-300' : 'text-slate-400'}`} />
                 <span>{item.label}</span>
               </div>
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-500 text-white">
+                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-500 text-white shadow-xs">
                   {item.badge}
                 </span>
               )}
