@@ -38,13 +38,18 @@ const app = express();
 app.set('trust proxy', env.TRUST_PROXY);
 
 // P0-1 & P2-8: CORS configured with explicit origin & credentials
-const allowedOrigins = new Set([
-  env.APP_URL,
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  `http://localhost:${env.PORT}`,
-  `http://127.0.0.1:${env.PORT}`,
-]);
+// Production only allows APP_URL (+ explicit CORS_ORIGINS); localhost dev origins are added outside production
+const allowedOrigins = new Set<string>([env.APP_URL.replace(/\/+$/, ''), ...env.CORS_ORIGINS]);
+if (env.NODE_ENV !== 'production') {
+  for (const devOrigin of [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    `http://localhost:${env.PORT}`,
+    `http://127.0.0.1:${env.PORT}`,
+  ]) {
+    allowedOrigins.add(devOrigin);
+  }
+}
 
 app.use(
   cors({
@@ -59,11 +64,34 @@ app.use(
   })
 );
 
+// Content-Security-Policy for the SPA served by this server in production.
+// - scripts only from our own origin (no inline/eval) -> limits the blast radius of any XSS
+// - images may come from https (VietQR / QR generator / avatar URLs)
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
 // Security headers (Helmet-style lightweight headers)
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // HSTS only makes sense (and is only honoured) when the site is served over HTTPS
+  if (env.COOKIE_SECURE) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
   next();
 });
 
@@ -77,20 +105,37 @@ app.use(
   })
 );
 
-// Health check & DB status
+// Public liveness probe: reveals nothing about infrastructure (DB host/user/name, env, dev tools)
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    ...getDatabaseStatus(),
-    env: env.NODE_ENV,
-    devToolsEnabled: env.ENABLE_DEV_TOOLS,
+    connected: getDatabaseStatus().connected,
     timestamp: new Date().toISOString(),
   });
 });
 
+// Detailed diagnostics for administrators only
+app.get(
+  '/api/health/details',
+  requireAuth,
+  requireRole('admin'),
+  (_req, res) => {
+    res.json({
+      status: 'ok',
+      ...getDatabaseStatus(),
+      env: env.NODE_ENV,
+      devToolsEnabled: env.ENABLE_DEV_TOOLS,
+      trustProxy: env.TRUST_PROXY,
+      cookieSecure: env.COOKIE_SECURE,
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
 app.post(
   '/api/health/reconnect-mysql',
   requireAuth,
+  requireRole('admin'),
   asyncHandler(async (_req, res) => {
     await initDatabase();
     res.json({

@@ -17,6 +17,31 @@ export interface EnvConfig {
   DEVICE_SECRET_KEY: string;
   /** Value passed to Express `trust proxy`: false (direct), hop count, or 'loopback' / IP / CIDR list */
   TRUST_PROXY: false | number | string;
+  /** Adds the `Secure` flag to the auth cookie (HTTPS only). Defaults to true in production. */
+  COOKIE_SECURE: boolean;
+  /** Extra allowed browser origins (comma separated) besides APP_URL */
+  CORS_ORIGINS: string[];
+}
+
+function parseOptionalBoolean(raw: string | undefined, name: string, fallback: boolean): boolean {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (!value) return fallback;
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  throw new Error(`[Config Error] ${name} chỉ nhận "true" hoặc "false" (hiện tại: "${raw}")`);
+}
+
+function parseOriginList(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean)
+    .map((o) => {
+      if (!/^https?:\/\/[^/\s]+$/i.test(o)) {
+        throw new Error(`[Config Error] CORS_ORIGINS chứa origin không hợp lệ: "${o}" (dạng đúng: https://shop.example.com)`);
+      }
+      return o;
+    });
 }
 
 /**
@@ -102,6 +127,8 @@ export function parseEnvConfig(rawEnv: NodeJS.ProcessEnv = process.env): EnvConf
     JWT_SECRET: jwtSecret,
     DEVICE_SECRET_KEY: deviceSecretKey,
     TRUST_PROXY: parseTrustProxy(rawEnv.TRUST_PROXY),
+    COOKIE_SECURE: parseOptionalBoolean(rawEnv.COOKIE_SECURE, 'COOKIE_SECURE', nodeEnv === 'production'),
+    CORS_ORIGINS: parseOriginList(rawEnv.CORS_ORIGINS),
   };
 }
 

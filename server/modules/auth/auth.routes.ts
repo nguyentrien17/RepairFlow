@@ -11,6 +11,8 @@ import { toPublicUser } from '../../utils/mapRow';
 import { AppError } from '../../utils/AppError';
 import { recordAuditLog } from '../audit/audit.service';
 import { env } from '../../config/env';
+import { clearAuthCookie, setAuthCookie } from '../../utils/authCookie';
+import { revokeUserSessions } from './session.service';
 
 export const authRouter = Router();
 
@@ -78,6 +80,7 @@ authRouter.post(
       username: publicUser.username,
       full_name: publicUser.full_name,
       role: publicUser.role,
+      token_version: Number(userRow.token_version || 0),
     });
 
     await recordAuditLog(null, {
@@ -90,11 +93,7 @@ authRouter.post(
       ipAddress: req.ip,
     });
 
-    const secureFlag = env.NODE_ENV === 'production' ? '; Secure' : '';
-    res.setHeader(
-      'Set-Cookie',
-      `rf_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}${secureFlag}`
-    );
+    setAuthCookie(res, token);
 
     res.json({
       user: publicUser,
@@ -134,10 +133,12 @@ authRouter.post(
       action: 'LOGOUT',
       entityType: 'users',
       entityId: req.user!.username,
-      details: `Người dùng ${req.user!.full_name} đã đăng xuất`,
+      details: `Người dùng ${req.user!.full_name} đã đăng xuất (thu hồi mọi phiên đăng nhập)`,
       ipAddress: req.ip,
     });
-    res.setHeader('Set-Cookie', 'rf_token=; Path=/; HttpOnly; Max-Age=0');
+    // Invalidate the token server-side too: a copied cookie stops working right after logout
+    await revokeUserSessions(db, req.user!.sub);
+    clearAuthCookie(res);
     res.json({ ok: true });
   })
 );
@@ -173,17 +174,30 @@ authRouter.post(
       .set({ password_hash: newHash, must_change_password: 0 })
       .where(eq(users.id, userRow.id));
 
+    // Kick out every other session (e.g. a stolen cookie), then re-issue a fresh token for this browser
+    const newTokenVersion = await revokeUserSessions(db, userRow.id);
+    setAuthCookie(
+      res,
+      signJwt({
+        id: userRow.id,
+        username: userRow.username,
+        full_name: userRow.full_name,
+        role: userRow.role as any,
+        token_version: newTokenVersion,
+      })
+    );
+
     await recordAuditLog(null, {
       userId: userRow.id,
       userName: userRow.full_name,
       action: 'CHANGE_PASSWORD',
       entityType: 'users',
       entityId: userRow.username,
-      details: 'Đổi mật khẩu tài khoản thành công',
+      details: 'Đổi mật khẩu tài khoản thành công (đăng xuất mọi thiết bị khác)',
       ipAddress: req.ip,
     });
 
-    res.json({ ok: true, message: 'Đổi mật khẩu thành công!' });
+    res.json({ ok: true, message: 'Đổi mật khẩu thành công! Các thiết bị khác đã bị đăng xuất.' });
   })
 );
 
@@ -276,8 +290,9 @@ authRouter.post(
       username: publicUser.username,
       full_name: publicUser.full_name,
       role: publicUser.role,
+      token_version: Number(rows[0].token_version || 0),
     });
-    res.setHeader('Set-Cookie', `rf_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
+    setAuthCookie(res, token);
     res.json({ user: publicUser });
   })
 );

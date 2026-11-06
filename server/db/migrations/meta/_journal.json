@@ -8,6 +8,13 @@
       "when": 1793936593800,
       "tag": "0000_freezing_sally_floyd",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1793949362081,
+      "tag": "0001_add_user_token_version",
+      "breakpoints": true
     }
   ]
 }

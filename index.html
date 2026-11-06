@@ -3,21 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      // Shim to ensure window.fetch is writable and configurable for extensions/inspectors
-      (function() {
-        try {
-          var originalFetch = window.fetch;
-          var currentFetch = originalFetch;
-          Object.defineProperty(window, 'fetch', {
-            configurable: true,
-            enumerable: true,
-            get: function() { return currentFetch; },
-            set: function(v) { currentFetch = v; }
-          });
-        } catch (e) {}
-      })();
-    </script>
     <title>RepairFlow - Quản lý tiếp nhận & sửa chữa thiết bị điện tử</title>
     <meta name="description" content="Hệ thống quản lý toàn diện quy trình tiếp nhận, chẩn đoán, báo giá, sửa chữa, kiểm tra chất lượng, kho linh kiện, thanh toán và bảo hành thiết bị điện tử." />
     <meta property="og:title" content="RepairFlow - Quản lý tiếp nhận & sửa chữa thiết bị điện tử" />

@@ -45,6 +45,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenLookup, on
   }, []);
 
   const handleReconnectMySQL = async () => {
+    // Reconnect + DB connection details are admin-only on the server; other roles just re-sync data
+    if (currentUser?.role !== 'admin') {
+      await StorageService.syncFromBackend();
+      showToast('Đã đồng bộ dữ liệu mới nhất từ máy chủ.', 'success');
+      return;
+    }
     const status = await ApiClient.reconnectMySQL();
     await StorageService.syncFromBackend();
     if (status.connected) {

@@ -5,6 +5,7 @@ import { AppError } from '../utils/AppError';
 import { db } from '../db/pool';
 import { users } from '../db/schema';
 import { UserRole } from '../../shared/types';
+import { AUTH_COOKIE_NAME, clearAuthCookie } from '../utils/authCookie';
 
 declare global {
   namespace Express {
@@ -20,8 +21,12 @@ function parseCookieToken(cookieHeader?: string): string | null {
   const pairs = cookieHeader.split(';');
   for (const pair of pairs) {
     const [k, ...v] = pair.trim().split('=');
-    if (k === 'rf_token') {
-      return decodeURIComponent(v.join('='));
+    if (k === AUTH_COOKIE_NAME) {
+      try {
+        return decodeURIComponent(v.join('='));
+      } catch {
+        return null; // malformed percent-encoding -> treat as no token instead of throwing 500
+      }
     }
   }
   return null;
@@ -55,14 +60,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     const payload = verifyJwt(token);
     if (!payload) {
-      res.setHeader('Set-Cookie', 'rf_token=; Path=/; HttpOnly; Max-Age=0');
+      clearAuthCookie(res);
       return next(AppError.unauthorized('Token xác thực không hợp lệ hoặc đã hết hạn.'));
     }
 
     const [dbUser] = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
     if (!dbUser || !dbUser.is_active) {
-      res.setHeader('Set-Cookie', 'rf_token=; Path=/; HttpOnly; Max-Age=0');
+      clearAuthCookie(res);
       return next(AppError.unauthorized('Tài khoản đã bị khóa hoặc không còn tồn tại.'));
+    }
+
+    // Revoked session: the user logged out, changed password, or an admin locked/changed the account
+    if (payload.tv !== Number(dbUser.token_version || 0)) {
+      clearAuthCookie(res);
+      return next(AppError.unauthorized('Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.', 'SESSION_REVOKED'));
     }
 
     req.user = {

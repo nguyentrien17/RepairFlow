@@ -190,7 +190,7 @@ async function apiRequest(
     rawBody?: string;
     headers?: Record<string, string>;
   } = {}
-): Promise<{ status: number; data: any }> {
+): Promise<{ status: number; data: any; headers: Headers }> {
   const headers: Record<string, string> = {
     ...(options.headers || {}),
   };
@@ -218,7 +218,7 @@ async function apiRequest(
   } catch {
     data = text;
   }
-  return { status: res.status, data };
+  return { status: res.status, data, headers: res.headers };
 }
 
 test('End-to-end MySQL & Express API Integration Suite (Items B, C, D, E, G, H, I, J)', async (t) => {
@@ -256,7 +256,16 @@ test('End-to-end MySQL & Express API Integration Suite (Items B, C, D, E, G, H, 
     const tokenFor = async (username: string) => {
       const [u] = await db.select().from(schema.users).where(eq(schema.users.username, username)).limit(1);
       assert.ok(u, `Seed user "${username}" not found`);
-      return { user: u, token: signJwt({ id: u.id, username: u.username, full_name: u.full_name, role: u.role as any }) };
+      return {
+        user: u,
+        token: signJwt({
+          id: u.id,
+          username: u.username,
+          full_name: u.full_name,
+          role: u.role as any,
+          token_version: Number(u.token_version || 0),
+        }),
+      };
     };
     const { token: adminToken } = await tokenFor('admin');
     const { token: managerToken } = await tokenFor('manager');
@@ -791,6 +800,88 @@ test('End-to-end MySQL & Express API Integration Suite (Items B, C, D, E, G, H, 
       }
       const blockedRes = await apiRequest(baseUrl, 'GET', `${lookupPath}?phone=${last4}`, fromIp('198.51.100.30'));
       assert.equal(blockedRes.status, 429);
+    });
+
+    await t.test('9. Session revocation (token_version), cookie attributes, health info disclosure & security headers', async () => {
+      const freshToken = async (username: string) => (await tokenFor(username)).token;
+
+      // Logout revokes the token server-side: replaying the same token afterwards -> 401 SESSION_REVOKED
+      const tokenA = await freshToken('thungan');
+      assert.equal((await apiRequest(baseUrl, 'GET', '/api/auth/me', { token: tokenA })).status, 200);
+      const logoutRes = await apiRequest(baseUrl, 'POST', '/api/auth/logout', { token: tokenA });
+      assert.equal(logoutRes.status, 200);
+      const clearCookie = logoutRes.headers.get('set-cookie') || '';
+      assert.match(clearCookie, /rf_token=;/);
+      assert.match(clearCookie, /Max-Age=0/);
+      assert.match(clearCookie, /SameSite=Lax/);
+      const replay = await apiRequest(baseUrl, 'GET', '/api/auth/me', { token: tokenA });
+      assert.equal(replay.status, 401);
+      assert.equal(replay.data.error.code, 'SESSION_REVOKED');
+
+      // Change password: old tokens die, the response re-issues a working cookie for this browser
+      const tokenB = await freshToken('thungan');
+      const changeRes = await apiRequest(baseUrl, 'POST', '/api/auth/change-password', {
+        token: tokenB,
+        body: { oldPassword: 'Thungan@123', newPassword: 'Thungan@456' },
+      });
+      assert.equal(changeRes.status, 200);
+      const issuedCookie = changeRes.headers.get('set-cookie') || '';
+      assert.match(issuedCookie, /HttpOnly/);
+      assert.match(issuedCookie, /SameSite=Lax/);
+      assert.match(issuedCookie, /Max-Age=604800/);
+      assert.equal((await apiRequest(baseUrl, 'GET', '/api/auth/me', { token: tokenB })).status, 401);
+      const reissuedToken = decodeURIComponent(/rf_token=([^;]+)/.exec(issuedCookie)![1]);
+      assert.equal(
+        (await apiRequest(baseUrl, 'GET', '/api/auth/me', { headers: { Cookie: `rf_token=${encodeURIComponent(reissuedToken)}` } })).status,
+        200
+      );
+
+      // Admin changing a user's role revokes that user's existing sessions immediately
+      const { user: cashier } = await tokenFor('thungan');
+      const tokenC = await freshToken('thungan');
+      const roleChange = await apiRequest(baseUrl, 'PUT', `/api/users/${cashier.id}`, {
+        token: adminToken,
+        body: { role: 'technician' },
+      });
+      assert.equal(roleChange.status, 200);
+      assert.equal((await apiRequest(baseUrl, 'GET', '/api/auth/me', { token: tokenC })).status, 401);
+
+      // Tokens without the tv claim (issued before token_version existed) are rejected
+      const legacyPayload = Buffer.from(
+        JSON.stringify({ sub: cashier.id, username: 'thungan', full_name: 'x', role: 'admin', iat: 0, exp: 9999999999 })
+      ).toString('base64url');
+      const legacyHeader = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+      const legacySig = crypto
+        .createHmac('sha256', env.JWT_SECRET)
+        .update(`${legacyHeader}.${legacyPayload}`)
+        .digest('base64url');
+      const legacyRes = await apiRequest(baseUrl, 'GET', '/api/auth/me', { token: `${legacyHeader}.${legacyPayload}.${legacySig}` });
+      assert.equal(legacyRes.status, 401);
+
+      // Public health check reveals no infrastructure details; details endpoint is admin-only
+      const health = await apiRequest(baseUrl, 'GET', '/api/health');
+      assert.equal(health.status, 200);
+      for (const leakedKey of ['host', 'port', 'database', 'user', 'env', 'devToolsEnabled']) {
+        assert.equal(leakedKey in health.data, false, `/api/health must not expose "${leakedKey}"`);
+      }
+      assert.equal((await apiRequest(baseUrl, 'GET', '/api/health/details', { token: recToken })).status, 403);
+      assert.equal((await apiRequest(baseUrl, 'GET', '/api/health/details', { token: adminToken })).status, 200);
+      assert.equal((await apiRequest(baseUrl, 'POST', '/api/health/reconnect-mysql', { token: recToken, body: {} })).status, 403);
+
+      // Security headers
+      const csp = health.headers.get('content-security-policy') || '';
+      assert.match(csp, /script-src 'self'/);
+      assert.match(csp, /frame-ancestors 'none'/);
+      assert.equal(health.headers.get('x-frame-options'), 'DENY');
+
+      // Cross-site browser request from an unknown origin is refused before reaching the handler (CSRF)
+      const foreign = await apiRequest(baseUrl, 'POST', '/api/payments', {
+        token: recToken,
+        headers: { Origin: 'https://evil.example' },
+        body: { ticket_id: 1, amount: 1000 },
+      });
+      assert.equal(foreign.status, 403);
+      assert.equal(foreign.data.error.code, 'CORS_FORBIDDEN');
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

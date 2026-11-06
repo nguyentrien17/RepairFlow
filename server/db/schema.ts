@@ -58,6 +58,8 @@ export const users = mysqlTable('users', {
   password_hash: varchar('password_hash', { length: 255 }).notNull(),
   must_change_password: int('must_change_password').notNull().default(0),
   is_active: int('is_active').notNull().default(1),
+  /** Incremented on logout / password change / lock / role change to revoke every previously issued JWT */
+  token_version: int('token_version').notNull().default(0),
   avatar_url: varchar('avatar_url', { length: 500 }),
   created_at: varchar('created_at', { length: 50 }).notNull(),
   last_login_at: varchar('last_login_at', { length: 50 }),

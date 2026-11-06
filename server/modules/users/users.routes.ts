@@ -10,6 +10,7 @@ import { hashPassword, generateTemporaryPassword } from '../../utils/crypto';
 import { toPublicUser } from '../../utils/mapRow';
 import { AppError } from '../../utils/AppError';
 import { recordAuditLog } from '../audit/audit.service';
+import { revokeUserSessions } from '../auth/session.service';
 
 export const usersRouter = Router();
 
@@ -138,6 +139,12 @@ usersRouter.put(
       })
       .where(eq(users.id, id));
 
+    // Locking an account or changing its role must end the user's current sessions immediately
+    const sessionsRevoked = nextActive !== current.is_active || nextRole !== current.role;
+    if (sessionsRevoked) {
+      await revokeUserSessions(db, id);
+    }
+
     const updatedRows = await db.select().from(users).where(eq(users.id, id)).limit(1);
     const updatedUser = toPublicUser(updatedRows[0]);
 
@@ -147,7 +154,7 @@ usersRouter.put(
       action: 'UPDATE_USER',
       entityType: 'users',
       entityId: updatedUser.username,
-      details: `Cập nhật tài khoản ${updatedUser.full_name} (Role: ${updatedUser.role}, Active: ${updatedUser.is_active})`,
+      details: `Cập nhật tài khoản ${updatedUser.full_name} (Role: ${updatedUser.role}, Active: ${updatedUser.is_active})${sessionsRevoked ? ' — đã thu hồi mọi phiên đăng nhập' : ''}`,
       ipAddress: req.ip,
     });
 
@@ -174,6 +181,7 @@ usersRouter.post(
       .update(users)
       .set({ password_hash: passwordHash, must_change_password: 1 })
       .where(eq(users.id, id));
+    await revokeUserSessions(db, id);
 
     await recordAuditLog(null, {
       userId: req.user!.sub,

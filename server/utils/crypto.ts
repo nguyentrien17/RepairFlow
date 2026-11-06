@@ -82,11 +82,16 @@ export function decryptDevicePassword(cipherText: string | undefined | null): st
 // =============================================================================
 // 3. JWT TOKEN SIGNING & VERIFICATION (HMAC-SHA256 - P0-1)
 // =============================================================================
+/** Session lifetime for the auth JWT and its cookie (7 days) */
+export const AUTH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 export interface JwtPayload {
   sub: number;
   username: string;
   full_name: string;
   role: UserRole;
+  /** users.token_version at issue time; a mismatch means the session was revoked */
+  tv: number;
   iat: number;
   exp: number;
 }
@@ -106,8 +111,8 @@ function base64UrlDecode(input: string): string {
 }
 
 export function signJwt(
-  user: { id: number; username: string; full_name: string; role: UserRole },
-  expiresInSeconds = 86400 * 7
+  user: { id: number; username: string; full_name: string; role: UserRole; token_version: number },
+  expiresInSeconds = AUTH_TOKEN_TTL_SECONDS
 ): string {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -116,6 +121,7 @@ export function signJwt(
     username: user.username,
     full_name: user.full_name,
     role: user.role,
+    tv: Number(user.token_version || 0),
     iat: now,
     exp: now + expiresInSeconds,
   };
@@ -143,11 +149,13 @@ export function verifyJwt(token: string): JwtPayload | null {
     if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return null;
     }
+    const header = JSON.parse(base64UrlDecode(encodedHeader));
+    if (header?.alg !== 'HS256') return null;
     const payload = JSON.parse(base64UrlDecode(encodedPayload)) as JwtPayload;
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      return null;
-    }
+    // exp, sub and tv are mandatory: tokens without them (or issued before token_version existed) are rejected
+    if (typeof payload.exp !== 'number' || payload.exp < now) return null;
+    if (typeof payload.sub !== 'number' || typeof payload.tv !== 'number') return null;
     return payload;
   } catch {
     return null;
